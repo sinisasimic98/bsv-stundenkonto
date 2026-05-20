@@ -72,35 +72,130 @@ function group(rows,key){const m={};rows.forEach(r=>m[r[key]||"Nepoznato"]=(m[r[
 function filtered(){const q=state.search.toLowerCase();return state.entries.filter(e=>state.workerFilter==="all"||e.user_id===state.workerFilter).filter(e=>state.projectFilter==="all"||e.project_id===state.projectFilter).filter(e=>!q||(e.person_name||"").toLowerCase().includes(q)||(e.project_name||"").toLowerCase().includes(q)||(e.note||"").toLowerCase().includes(q));}
 
 function buildReports(rows){
-  const sorted=[...rows].sort((a,b)=>(a.person_name||"").localeCompare(b.person_name||"")||a.work_date.localeCompare(b.work_date));
-  const details=[["Datum","Radnik","Projekat","Klijent","Lokacija","Od","Do","Pauza min","Broj sati"]];
-  sorted.forEach(r=>details.push([r.work_date,r.person_name||"",r.project_name||"",r.customer||"",r.location||"",r.start_time||"",r.end_time||"",Number(r.break_minutes||0),Number(r.hours||0)]));
+  const sorted=[...rows].sort((a,b)=>
+    (a.person_name||"").localeCompare(b.person_name||"") ||
+    (a.project_name||"").localeCompare(b.project_name||"") ||
+    a.work_date.localeCompare(b.work_date)
+  );
 
+  const details=[["Datum","Radnik","Projekat","Klijent","Lokacija","Od","Do","Pauza min","Broj sati"]];
+  sorted.forEach(r=>details.push([
+    r.work_date,
+    r.person_name||"",
+    r.project_name||"",
+    r.customer||"",
+    r.location||"",
+    r.start_time||"",
+    r.end_time||"",
+    Number(r.break_minutes||0),
+    Number(r.hours||0)
+  ]));
+
+  const monthByPerson={};
+  const projectPersonMap={};
+  const projectDetailMap={};
   const weeklyMap={};
-  const monthMap={};
+
   sorted.forEach(r=>{
-    const dt=dateObj(r.work_date);
-    const mon=isoDate(mondayOf(dt));
-    const key=(r.person_name||"Nepoznato")+"|"+mon;
-    if(!weeklyMap[key]) weeklyMap[key]={radnik:r.person_name||"Nepoznato",sedmica:mon,days:[0,0,0,0,0,0,0],total:0};
-    const idx=(dt.getUTCDay()+6)%7;
+    const worker=r.person_name||"Nepoznato";
+    const project=r.project_name||"Bez projekta";
+    const customer=r.customer||"";
+    const location=r.location||"";
     const hrs=Number(r.hours||0);
-    weeklyMap[key].days[idx]+=hrs;
-    weeklyMap[key].total+=hrs;
-    const mk=r.person_name||"Nepoznato";
-    monthMap[mk]=(monthMap[mk]||0)+hrs;
+
+    monthByPerson[worker]=(monthByPerson[worker]||0)+hrs;
+
+    if(!projectPersonMap[project]) projectPersonMap[project]={customer,location,people:{},total:0};
+    projectPersonMap[project].people[worker]=(projectPersonMap[project].people[worker]||0)+hrs;
+    projectPersonMap[project].total+=hrs;
+
+    if(!projectDetailMap[project]) projectDetailMap[project]=[];
+    projectDetailMap[project].push(r);
+
+    const dt=dateObj(r.work_date);
+    const mon=mondayOf(dt);
+    const sun=new Date(mon);
+    sun.setUTCDate(mon.getUTCDate()+6);
+    const weekNumber=Math.ceil((((dt - new Date(Date.UTC(dt.getUTCFullYear(),0,1))) / 86400000)+1)/7);
+    const weekKey=`KW ${weekNumber} ${isoDate(mon)}`;
+    if(!weeklyMap[weekKey]){
+      weeklyMap[weekKey]={
+        weekNumber,
+        from:isoDate(mon),
+        to:isoDate(sun),
+        rows:[],
+        total:0
+      };
+    }
+    weeklyMap[weekKey].rows.push(r);
+    weeklyMap[weekKey].total+=hrs;
   });
 
-  const weekly=[["Radnik","Sedmica od",...dayNames,"Ukupno sedmica"]];
-  Object.values(weeklyMap)
-    .sort((a,b)=>a.radnik.localeCompare(b.radnik)||a.sedmica.localeCompare(b.sedmica))
-    .forEach(w=>weekly.push([w.radnik,w.sedmica,...w.days.map(x=>Math.round(x*100)/100),Math.round(w.total*100)/100]));
+  const monthlyAllPeople=[["Radnik","Mjesec","Ukupno sati"]];
+  Object.entries(monthByPerson)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .forEach(([name,total])=>monthlyAllPeople.push([name,state.month,Math.round(total*100)/100]));
+  monthlyAllPeople.push(["UKUPNO SVI",state.month,Math.round(Object.values(monthByPerson).reduce((s,x)=>s+x,0)*100)/100]);
 
-  const monthly=[["Radnik","Mjesec","Ukupno sati"]];
-  Object.entries(monthMap).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([name,total])=>monthly.push([name,state.month,Math.round(total*100)/100]));
-  monthly.push(["UKUPNO SVI",state.month,Math.round(Object.values(monthMap).reduce((s,x)=>s+x,0)*100)/100]);
+  const projectSheets={};
+  Object.entries(projectPersonMap)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .forEach(([project,info])=>{
+      const sheet=[];
+      sheet.push([`PROJEKAT: ${project}`]);
+      sheet.push([`KLIJENT: ${info.customer||""}`]);
+      sheet.push([`LOKACIJA: ${info.location||""}`]);
+      sheet.push([]);
+      sheet.push(["Radnik","Ukupno sati na projektu"]);
+      Object.entries(info.people)
+        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .forEach(([person,total])=>sheet.push([person,Math.round(total*100)/100]));
+      sheet.push(["UKUPNO PROJEKAT",Math.round(info.total*100)/100]);
+      sheet.push([]);
+      sheet.push(["Detaljni unosi za projekat"]);
+      sheet.push(["Datum","Radnik","Od","Do","Pauza min","Broj sati","Opis"]);
+      (projectDetailMap[project]||[])
+        .sort((a,b)=>a.work_date.localeCompare(b.work_date)||(a.person_name||"").localeCompare(b.person_name||""))
+        .forEach(r=>sheet.push([
+          r.work_date,
+          r.person_name||"",
+          r.start_time||"",
+          r.end_time||"",
+          Number(r.break_minutes||0),
+          Number(r.hours||0),
+          r.note||""
+        ]));
+      projectSheets[project]=sheet;
+    });
 
-  return {details,weekly,monthly};
+  const weekSheets={};
+  Object.entries(weeklyMap)
+    .sort((a,b)=>a[1].from.localeCompare(b[1].from))
+    .forEach(([key,info])=>{
+      const sheet=[];
+      sheet.push([`SEDMICA ${info.weekNumber}`]);
+      sheet.push([`DATUMI: ${info.from} do ${info.to}`]);
+      sheet.push([]);
+      sheet.push(["Datum","Dan","Radnik","Projekat","Klijent","Lokacija","Broj sati"]);
+      info.rows
+        .sort((a,b)=>a.work_date.localeCompare(b.work_date)||(a.person_name||"").localeCompare(b.person_name||""))
+        .forEach(r=>{
+          const dt=dateObj(r.work_date);
+          sheet.push([
+            r.work_date,
+            dayNames[(dt.getUTCDay()+6)%7],
+            r.person_name||"",
+            r.project_name||"",
+            r.customer||"",
+            r.location||"",
+            Number(r.hours||0)
+          ]);
+        });
+      sheet.push(["","","","","","UKUPNO SEDMICA",Math.round(info.total*100)/100]);
+      weekSheets[key]=sheet;
+    });
+
+  return { monthlyAllPeople, projectSheets, weekSheets, details };
 }
 
 async function exportExcel(rows){
@@ -109,92 +204,40 @@ async function exportExcel(rows){
     const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
     const wb=XLSX.utils.book_new();
 
+    const cleanSheetName=(name)=>{
+      return String(name||"Sheet")
+        .replace(/[\\\/\?\*\[\]\:]/g," ")
+        .slice(0,31)
+        .trim() || "Sheet";
+    };
+
     const addSheet=(name,data,cols)=>{
       const ws=XLSX.utils.aoa_to_sheet(data);
       if(cols) ws["!cols"]=cols.map(wch=>({wch}));
-      XLSX.utils.book_append_sheet(wb,ws,name.slice(0,31));
+      XLSX.utils.book_append_sheet(wb,ws,cleanSheetName(name));
     };
 
-    // PRVI LIST - svi ljudi ukupno mjesecno
-    addSheet("Ukupno mjesecno",reports.monthly,[22,12,14]);
+    // PRVI LIST: svi radnici ukupno mjesečno
+    addSheet("1 Ukupno mjesecno",reports.monthlyAllPeople,[28,14,16]);
 
-    // LISTOVI ZA SVAKI PROJEKAT
+    // NAKON TOGA: svaki projekat poseban list sa listom ljudi i ukupno
     if(isAdmin()){
-      const projectSheets = {};
-      rows.forEach(r=>{
-        const pname=(r.project_name||"Bez projekta");
-        if(!projectSheets[pname]){
-          projectSheets[pname]=[["Datum","Radnik","Klijent","Lokacija","Od","Do","Pauza","Broj sati","Opis"]];
-        }
-        projectSheets[pname].push([
-          r.work_date,
-          r.person_name||"",
-          r.customer||"",
-          r.location||"",
-          r.start_time||"",
-          r.end_time||"",
-          Number(r.break_minutes||0),
-          Number(r.hours||0),
-          r.note||""
-        ]);
+      Object.entries(reports.projectSheets).forEach(([project,data],idx)=>{
+        addSheet(`${idx+2} ${project}`,data,[28,18,14,14,14,14,40]);
       });
-
-      Object.entries(projectSheets)
-        .sort((a,b)=>a[0].localeCompare(b[0]))
-        .forEach(([project,data])=>{
-          addSheet(project,data,[12,22,20,20,10,10,10,12,35]);
-        });
     }
 
-    // LISTOVI ZA SEDMICE
-    const weeklySheets = {};
-    rows.forEach(r=>{
-      const dt=dateObj(r.work_date);
-      const mon=mondayOf(dt);
-      const sunday=new Date(mon);
-      sunday.setUTCDate(mon.getUTCDate()+6);
-
-      const weekNumber=Math.ceil((((dt - new Date(Date.UTC(dt.getUTCFullYear(),0,1))) / 86400000)+1)/7);
-
-      const key=`Sedmica ${weekNumber}`;
-      if(!weeklySheets[key]){
-        weeklySheets[key]={
-          header:`${isoDate(mon)} do ${isoDate(sunday)}`,
-          rows:[["Datum","Dan","Radnik","Projekat","Klijent","Lokacija","Broj sati"]]
-        };
-      }
-
-      const dayName=dayNames[(dt.getUTCDay()+6)%7];
-
-      weeklySheets[key].rows.push([
-        r.work_date,
-        dayName,
-        r.person_name||"",
-        r.project_name||"",
-        r.customer||"",
-        r.location||"",
-        Number(r.hours||0)
-      ]);
+    // NAKON TOGA: svaka sedmica poseban list
+    Object.entries(reports.weekSheets).forEach(([week,data])=>{
+      addSheet(week,data,[14,14,24,24,22,22,14]);
     });
 
-    Object.entries(weeklySheets)
-      .sort((a,b)=>a[0].localeCompare(b[0]))
-      .forEach(([name,obj])=>{
-        obj.rows.unshift([obj.header]);
-        addSheet(name,obj.rows,[14,14,22,22,20,20,12]);
-      });
-
-    // DODATNI LISTOVI
-    addSheet("Detaljni unosi",reports.details,[12,22,22,20,20,10,10,12,12]);
-
-    if(isAdmin()){
-      addSheet("Spisak ljudi",reports.peopleList,[22,14,45,14]);
-      addSheet("Ukupno projekti",reports.allProjectTotals,[22,20,20,14]);
-    }
+    // ZADNJI LIST: detaljni unosi
+    addSheet("Detaljni unosi",reports.details,[14,24,24,22,22,12,12,12,14]);
 
     XLSX.writeFile(wb,`stundenkonto-${state.month}.xlsx`);
   }catch(err){
-    const csv=[...reports.monthly].map(row=>row.join(";")).join("\n");
+    const csv=reports.monthlyAllPeople.map(row=>row.join(";")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
