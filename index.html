@@ -104,25 +104,104 @@ function buildReports(rows){
 }
 
 async function exportExcel(rows){
-  const {details,weekly,monthly}=buildReports(rows);
+  const reports=buildReports(rows);
   try{
     const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
     const wb=XLSX.utils.book_new();
-    const ws1=XLSX.utils.aoa_to_sheet(details);
-    const ws2=XLSX.utils.aoa_to_sheet(weekly);
-    const ws3=XLSX.utils.aoa_to_sheet(monthly);
-    ws1["!cols"]=[{wch:12},{wch:22},{wch:22},{wch:20},{wch:20},{wch:10},{wch:10},{wch:12},{wch:12}];
-    ws2["!cols"]=[{wch:22},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:16}];
-    ws3["!cols"]=[{wch:22},{wch:12},{wch:14}];
-    XLSX.utils.book_append_sheet(wb,ws1,"Detaljni unosi");
-    XLSX.utils.book_append_sheet(wb,ws2,"Sedmicni izvjestaj");
-    XLSX.utils.book_append_sheet(wb,ws3,"Mjesecni izvjestaj");
+
+    const addSheet=(name,data,cols)=>{
+      const ws=XLSX.utils.aoa_to_sheet(data);
+      if(cols) ws["!cols"]=cols.map(wch=>({wch}));
+      XLSX.utils.book_append_sheet(wb,ws,name.slice(0,31));
+    };
+
+    // PRVI LIST - svi ljudi ukupno mjesecno
+    addSheet("Ukupno mjesecno",reports.monthly,[22,12,14]);
+
+    // LISTOVI ZA SVAKI PROJEKAT
+    if(isAdmin()){
+      const projectSheets = {};
+      rows.forEach(r=>{
+        const pname=(r.project_name||"Bez projekta");
+        if(!projectSheets[pname]){
+          projectSheets[pname]=[["Datum","Radnik","Klijent","Lokacija","Od","Do","Pauza","Broj sati","Opis"]];
+        }
+        projectSheets[pname].push([
+          r.work_date,
+          r.person_name||"",
+          r.customer||"",
+          r.location||"",
+          r.start_time||"",
+          r.end_time||"",
+          Number(r.break_minutes||0),
+          Number(r.hours||0),
+          r.note||""
+        ]);
+      });
+
+      Object.entries(projectSheets)
+        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .forEach(([project,data])=>{
+          addSheet(project,data,[12,22,20,20,10,10,10,12,35]);
+        });
+    }
+
+    // LISTOVI ZA SEDMICE
+    const weeklySheets = {};
+    rows.forEach(r=>{
+      const dt=dateObj(r.work_date);
+      const mon=mondayOf(dt);
+      const sunday=new Date(mon);
+      sunday.setUTCDate(mon.getUTCDate()+6);
+
+      const weekNumber=Math.ceil((((dt - new Date(Date.UTC(dt.getUTCFullYear(),0,1))) / 86400000)+1)/7);
+
+      const key=`Sedmica ${weekNumber}`;
+      if(!weeklySheets[key]){
+        weeklySheets[key]={
+          header:`${isoDate(mon)} do ${isoDate(sunday)}`,
+          rows:[["Datum","Dan","Radnik","Projekat","Klijent","Lokacija","Broj sati"]]
+        };
+      }
+
+      const dayName=dayNames[(dt.getUTCDay()+6)%7];
+
+      weeklySheets[key].rows.push([
+        r.work_date,
+        dayName,
+        r.person_name||"",
+        r.project_name||"",
+        r.customer||"",
+        r.location||"",
+        Number(r.hours||0)
+      ]);
+    });
+
+    Object.entries(weeklySheets)
+      .sort((a,b)=>a[0].localeCompare(b[0]))
+      .forEach(([name,obj])=>{
+        obj.rows.unshift([obj.header]);
+        addSheet(name,obj.rows,[14,14,22,22,20,20,12]);
+      });
+
+    // DODATNI LISTOVI
+    addSheet("Detaljni unosi",reports.details,[12,22,22,20,20,10,10,12,12]);
+
+    if(isAdmin()){
+      addSheet("Spisak ljudi",reports.peopleList,[22,14,45,14]);
+      addSheet("Ukupno projekti",reports.allProjectTotals,[22,20,20,14]);
+    }
+
     XLSX.writeFile(wb,`stundenkonto-${state.month}.xlsx`);
   }catch(err){
-    // fallback CSV sedmicni
-    const csv=[...weekly,[],...monthly].map(row=>row.join(";")).join("\\n");
+    const csv=[...reports.monthly].map(row=>row.join(";")).join("\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-    const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`stundenkonto-${state.month}.csv`;a.click();URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`stundenkonto-${state.month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
     set({message:"Excel biblioteka nije učitana, skinut je CSV izvještaj."});
   }
 }
