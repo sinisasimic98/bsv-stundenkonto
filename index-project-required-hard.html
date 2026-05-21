@@ -1,0 +1,583 @@
+<!-- PROJECT_REQUIRED_HARD_FIX -->
+<!-- STUNDENKONTO_SUPABASE_SAFE -->
+
+<!-- STK_SAFE_FINAL_2026: entry form does not rerender while typing -->
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BSV Montage Stundenkonto</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stundenkonto">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:#f8fafc;color:#0f172a}
+button,input,select,textarea{font:inherit}button{border:1px solid #cbd5e1;background:#fff;padding:10px 14px;border-radius:12px;cursor:pointer}
+button:hover{background:#f1f5f9}.primary,.active{background:#0f172a!important;color:#fff!important;border-color:#0f172a!important}
+input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;background:#fff}textarea{min-height:80px}
+.login{min-height:100vh;background:#020617;display:grid;place-items:center;padding:18px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:22px;box-shadow:0 20px 60px rgba(15,23,42,.08)}
+.login .card{max-width:460px;width:100%;text-align:center}.logo{width:70px;height:70px;border-radius:22px;background:#0f172a;color:#fff;display:grid;place-items:center;font-size:25px;font-weight:900;margin:0 auto 12px}
+.app{max-width:1400px;margin:0 auto;padding:22px;display:grid;gap:18px}.top{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}
+nav{display:flex;gap:8px;flex-wrap:wrap}.muted{color:#64748b;font-size:14px;margin:0 0 4px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:16px}.stat span{display:block;color:#64748b;font-size:13px}.stat b{display:block;font-size:24px;margin-top:4px;overflow:hidden;text-overflow:ellipsis}
+.grid{display:grid;gap:16px}.two{grid-template-columns:1.1fr .8fr}.three{grid-template-columns:repeat(3,1fr)}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:18px;display:grid;gap:14px}
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.form{display:grid;gap:12px}label{display:grid;gap:5px;color:#475569;font-size:13px}
+.info,.msg,.empty{background:#f1f5f9;border-radius:14px;padding:12px;color:#334155}.msg{background:#fff7ed;border:1px solid #fed7aa}.switch{display:flex;background:#f1f5f9;border-radius:14px;padding:4px;gap:4px}.switch button{flex:1;border:0}
+.summary{border:1px solid #e2e8f0;border-radius:18px;padding:14px}.sumrow,.row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #f1f5f9;padding:9px 0}.row small{display:block;color:#64748b;margin-top:3px}
+.tablewrap{overflow-x:auto;border:1px solid #e2e8f0;border-radius:18px}table{width:100%;min-width:950px;border-collapse:collapse;background:#fff}th{background:#f1f5f9;color:#64748b;text-align:left;font-size:12px;text-transform:uppercase}td,th{padding:11px;border-bottom:1px solid #e2e8f0}
+.personrow{display:grid;grid-template-columns:1fr 1fr 130px 1fr auto;gap:10px;align-items:center;border-bottom:1px solid #e2e8f0;padding:10px 0}
+.linkbtn{border:0;background:transparent;color:#2563eb;padding:6px;text-decoration:underline}
+@media(max-width:900px){.stats,.two,.three,.personrow{grid-template-columns:1fr}.top{align-items:stretch}nav button{flex:1}}
+
+.calBox{background:white;border:1px solid #e2e8f0;border-radius:24px;padding:18px}
+.calHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.calHead h2{margin:0;font-size:30px}
+.calWeek,.calGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.calWeek div{text-align:center;color:#64748b;font-weight:700;padding:8px 0}
+.calDay{min-height:95px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:8px}
+.calDay.empty{visibility:hidden}
+.calDay.weekend{background:#f1f5f9}
+.calNum{font-size:20px;font-weight:800}
+.calHours{margin-top:8px;display:inline-block;background:#fecaca;color:#7f1d1d;border-radius:8px;padding:4px 7px;font-size:13px;font-weight:700}
+.calDay.weekend .calHours{background:#bbf7d0;color:#14532d}
+@media(max-width:700px){
+.calBox{padding:10px;border-radius:18px;margin-left:-8px;margin-right:-8px}
+.calHead h2{font-size:22px}.calHead input{max-width:130px;font-size:12px;padding:8px}
+.calWeek,.calGrid{gap:4px}.calWeek div{font-size:11px;padding:5px 0}
+.calDay{min-height:62px;border-radius:10px;padding:5px}.calNum{font-size:14px}.calHours{font-size:10px;padding:2px 5px}
+}
+
+
+/* ADMIN STUNDENKONTO */
+.stkPanel{background:white;border:1px solid #e2e8f0;border-radius:24px;padding:18px;display:grid;gap:16px}
+.stkSummary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stkBox{background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:16px}
+.stkBox span{display:block;color:#64748b;font-size:13px}
+.stkBox b{display:block;margin-top:6px;font-size:24px}
+.stkTableWrap{overflow-x:auto;border:1px solid #e2e8f0;border-radius:18px}
+.stkTable{width:100%;min-width:900px;border-collapse:collapse;background:#fff}
+.stkTable th{background:#0f172a;color:white;text-align:left;font-size:12px;text-transform:uppercase;padding:12px}
+.stkTable td{padding:10px;border-bottom:1px solid #e2e8f0}
+.stkTable input{max-width:120px}
+.stkPositive{color:#166534;font-weight:800}
+.stkNegative{color:#991b1b;font-weight:800}
+@media(max-width:900px){.stkSummary{grid-template-columns:1fr 1fr}.stkBox b{font-size:20px}}
+
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const CONFIG = {
+  companyName: "BSV Montage",
+  appName: "Stundenkonto",
+  supabaseUrl: "https://wdiwzghqiqctwvuvfzoy.supabase.co",
+  supabaseAnonKey: "sb_publishable_c7-GmISJjbtfAM5kJc6EJg_z64f_4mA",
+  adminEmail: "simic@bsv-montage.de"
+};
+
+const supabase = createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+const app = document.getElementById("app");
+const todayISO = () => new Date().toISOString().slice(0,10);
+const monthISO = () => new Date().toISOString().slice(0,7);
+function nextMonthStart(month){const [y,m]=month.split("-").map(Number);return new Date(Date.UTC(y,m,1)).toISOString().slice(0,10);}
+function dateObj(iso){const [y,m,d]=iso.split("-").map(Number);return new Date(Date.UTC(y,m-1,d));}
+function isoDate(d){return d.toISOString().slice(0,10);}
+function mondayOf(date){const d=new Date(date);const day=d.getUTCDay()||7;d.setUTCDate(d.getUTCDate()-day+1);return d;}
+const dayNames=["Ponedeljak","Utorak","Srijeda","Četvrtak","Petak","Subota","Nedelja"];
+
+let state = {
+  session:null, profile:null, profiles:[], projects:[], entries:[], loading:true, message:"",
+  tab:"daily", month:monthISO(), authMode:"login",
+  authEmail:CONFIG.adminEmail, authPassword:"", authPassword2:"", authName:"",
+  resetPassword1:"", resetPassword2:"",
+  workerFilter:"all", projectFilter:"all", search:"",
+  entry:{work_date:todayISO(), user_id:"", project_id:"", start_time:"08:00", end_time:"16:00", break_minutes:30, note:""},
+  project:{name:"",customer:"",location:""}, stkBalances:{}
+};
+
+function h(start,end,br){if(!start||!end)return 0;const [sh,sm]=start.split(":").map(Number),[eh,em]=end.split(":").map(Number);return Math.round(Math.max(0,eh*60+em-(sh*60+sm)-Number(br||0))/60*100)/100;}
+function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
+function set(p){state={...state,...p};render();}
+function isAdmin(){return state.profile?.role==="admin";}
+function workers(){return state.profiles.filter(p=>p.active!==false&&p.role==="worker");}
+function activeProjects(){return state.projects.filter(p=>p.active!==false);}
+function group(rows,key){const m={};rows.forEach(r=>m[r[key]||"Nepoznato"]=(m[r[key]||"Nepoznato"]||0)+Number(r.hours||0));return Object.entries(m).map(([name,hours])=>({name,hours:Math.round(hours*100)/100})).sort((a,b)=>b.hours-a.hours);}
+function filtered(){const q=state.search.toLowerCase();return state.entries.filter(e=>state.workerFilter==="all"||e.user_id===state.workerFilter).filter(e=>state.projectFilter==="all"||e.project_id===state.projectFilter).filter(e=>!q||(e.person_name||"").toLowerCase().includes(q)||(e.project_name||"").toLowerCase().includes(q)||(e.note||"").toLowerCase().includes(q));}
+
+function buildReports(rows){
+  const sorted=[...rows].sort((a,b)=>
+    (a.person_name||"").localeCompare(b.person_name||"") ||
+    (a.project_name||"").localeCompare(b.project_name||"") ||
+    a.work_date.localeCompare(b.work_date)
+  );
+
+  const details=[["Datum","Radnik","Projekat","Klijent","Lokacija","Od","Do","Pauza min","Broj sati"]];
+  sorted.forEach(r=>details.push([
+    r.work_date,
+    r.person_name||"",
+    r.project_name||"",
+    r.customer||"",
+    r.location||"",
+    r.start_time||"",
+    r.end_time||"",
+    Number(r.break_minutes||0),
+    Number(r.hours||0)
+  ]));
+
+  const monthByPerson={};
+  const projectPersonMap={};
+  const projectDetailMap={};
+  const weeklyMap={};
+
+  sorted.forEach(r=>{
+    const worker=r.person_name||"Nepoznato";
+    const project=r.project_name||"Bez projekta";
+    const customer=r.customer||"";
+    const location=r.location||"";
+    const hrs=Number(r.hours||0);
+
+    monthByPerson[worker]=(monthByPerson[worker]||0)+hrs;
+
+    if(!projectPersonMap[project]) projectPersonMap[project]={customer,location,people:{},total:0};
+    projectPersonMap[project].people[worker]=(projectPersonMap[project].people[worker]||0)+hrs;
+    projectPersonMap[project].total+=hrs;
+
+    if(!projectDetailMap[project]) projectDetailMap[project]=[];
+    projectDetailMap[project].push(r);
+
+    const dt=dateObj(r.work_date);
+    const mon=mondayOf(dt);
+    const sun=new Date(mon);
+    sun.setUTCDate(mon.getUTCDate()+6);
+    const weekNumber=Math.ceil((((dt - new Date(Date.UTC(dt.getUTCFullYear(),0,1))) / 86400000)+1)/7);
+    const weekKey=`KW ${weekNumber} ${isoDate(mon)}`;
+    if(!weeklyMap[weekKey]){
+      weeklyMap[weekKey]={
+        weekNumber,
+        from:isoDate(mon),
+        to:isoDate(sun),
+        rows:[],
+        total:0
+      };
+    }
+    weeklyMap[weekKey].rows.push(r);
+    weeklyMap[weekKey].total+=hrs;
+  });
+
+  const monthlyAllPeople=[["Radnik","Mjesec","Ukupno sati"]];
+  Object.entries(monthByPerson)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .forEach(([name,total])=>monthlyAllPeople.push([name,state.month,Math.round(total*100)/100]));
+  monthlyAllPeople.push(["UKUPNO SVI",state.month,Math.round(Object.values(monthByPerson).reduce((s,x)=>s+x,0)*100)/100]);
+
+  const projectSheets={};
+  Object.entries(projectPersonMap)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .forEach(([project,info])=>{
+      const sheet=[];
+      sheet.push([`PROJEKAT: ${project}`]);
+      sheet.push([`KLIJENT: ${info.customer||""}`]);
+      sheet.push([`LOKACIJA: ${info.location||""}`]);
+      sheet.push([]);
+      sheet.push(["Radnik","Ukupno sati na projektu"]);
+      Object.entries(info.people)
+        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .forEach(([person,total])=>sheet.push([person,Math.round(total*100)/100]));
+      sheet.push(["UKUPNO PROJEKAT",Math.round(info.total*100)/100]);
+      sheet.push([]);
+      sheet.push(["Detaljni unosi za projekat"]);
+      sheet.push(["Datum","Radnik","Od","Do","Pauza min","Broj sati","Opis"]);
+      (projectDetailMap[project]||[])
+        .sort((a,b)=>a.work_date.localeCompare(b.work_date)||(a.person_name||"").localeCompare(b.person_name||""))
+        .forEach(r=>sheet.push([
+          r.work_date,
+          r.person_name||"",
+          r.start_time||"",
+          r.end_time||"",
+          Number(r.break_minutes||0),
+          Number(r.hours||0),
+          r.note||""
+        ]));
+      projectSheets[project]=sheet;
+    });
+
+  const weekSheets={};
+  Object.entries(weeklyMap)
+    .sort((a,b)=>a[1].from.localeCompare(b[1].from))
+    .forEach(([key,info])=>{
+      const sheet=[];
+      sheet.push([`SEDMICA ${info.weekNumber}`]);
+      sheet.push([`DATUMI: ${info.from} do ${info.to}`]);
+      sheet.push([]);
+      sheet.push(["Datum","Dan","Radnik","Projekat","Klijent","Lokacija","Broj sati"]);
+      info.rows
+        .sort((a,b)=>a.work_date.localeCompare(b.work_date)||(a.person_name||"").localeCompare(b.person_name||""))
+        .forEach(r=>{
+          const dt=dateObj(r.work_date);
+          sheet.push([
+            r.work_date,
+            dayNames[(dt.getUTCDay()+6)%7],
+            r.person_name||"",
+            r.project_name||"",
+            r.customer||"",
+            r.location||"",
+            Number(r.hours||0)
+          ]);
+        });
+      sheet.push(["","","","","","UKUPNO SEDMICA",Math.round(info.total*100)/100]);
+      weekSheets[key]=sheet;
+    });
+
+  return { monthlyAllPeople, projectSheets, weekSheets, details };
+}
+
+async function exportExcel(rows){
+  const reports=buildReports(rows);
+  try{
+    const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+    const wb=XLSX.utils.book_new();
+
+    const cleanSheetName=(name)=>{
+      return String(name||"Sheet")
+        .replace(/[\\\/\?\*\[\]\:]/g," ")
+        .slice(0,31)
+        .trim() || "Sheet";
+    };
+
+    const addSheet=(name,data,cols)=>{
+      const ws=XLSX.utils.aoa_to_sheet(data);
+      if(cols) ws["!cols"]=cols.map(wch=>({wch}));
+      XLSX.utils.book_append_sheet(wb,ws,cleanSheetName(name));
+    };
+
+    // PRVI LIST: svi radnici ukupno mjesečno
+    addSheet("1 Ukupno mjesecno",reports.monthlyAllPeople,[28,14,16]);
+
+    // NAKON TOGA: svaki projekat poseban list sa listom ljudi i ukupno
+    if(isAdmin()){
+      Object.entries(reports.projectSheets).forEach(([project,data],idx)=>{
+        addSheet(`${idx+2} ${project}`,data,[28,18,14,14,14,14,40]);
+      });
+    }
+
+    // NAKON TOGA: svaka sedmica poseban list
+    Object.entries(reports.weekSheets).forEach(([week,data])=>{
+      addSheet(week,data,[14,14,24,24,22,22,14]);
+    });
+
+    // ZADNJI LIST: detaljni unosi
+    addSheet("Detaljni unosi",reports.details,[14,24,24,22,22,12,12,12,14]);
+
+    XLSX.writeFile(wb,`stundenkonto-${state.month}.xlsx`);
+  }catch(err){
+    const csv=reports.monthlyAllPeople.map(row=>row.join(";")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`stundenkonto-${state.month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    set({message:"Excel biblioteka nije učitana, skinut je CSV izvještaj."});
+  }
+}
+
+async function refresh(){
+  if(!state.session?.user){set({loading:false});return;}
+  state.loading=true;render();
+  const me=await supabase.from("profiles").select("*").eq("id",state.session.user.id).single();
+  if(me.error){set({message:"Profil nije pronađen. Pokreni no_approval_excel_fix.sql u Supabase.",loading:false});return;}
+  state.profile=me.data;
+  const [pr,pj,en]=await Promise.all([
+    supabase.from("profiles").select("*").order("full_name"),
+    supabase.from("projects").select("*").order("name"),
+    supabase.from("time_entries_view").select("*").gte("work_date",`${state.month}-01`).lt("work_date",nextMonthStart(state.month)).order("work_date",{ascending:false})
+  ]);
+  state.profiles=pr.data||[];state.projects=pj.data||[];state.entries=en.data||[];if(isAdmin()) await loadStundenkontoBalances();
+  const w=workers(),p=activeProjects();
+  if(isAdmin()){
+    if(!state.entry.user_id || !w.find(x=>x.id===state.entry.user_id)) state.entry.user_id=w[0]?.id||state.profile.id;
+  }else{
+    state.entry.user_id=state.profile.id;
+  }
+  
+  set({loading:false,message:pr.error?.message||pj.error?.message||en.error?.message||""});
+}
+
+async function signIn(){const {error}=await supabase.auth.signInWithPassword({email:state.authEmail,password:state.authPassword});if(error)set({message:error.message});}
+async function signUp(){
+  if(!state.authEmail||!state.authPassword||!state.authPassword2){set({message:"Unesi email i lozinku dva puta."});return;}
+  if(state.authPassword!==state.authPassword2){set({message:"Lozinke nisu iste."});return;}
+  if(state.authPassword.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}
+  const cleanUrl=window.location.href.split("#")[0].split("?")[0];
+  const {error}=await supabase.auth.signUp({email:state.authEmail,password:state.authPassword,options:{data:{full_name:state.authName||state.authEmail},emailRedirectTo:cleanUrl}});
+  if(error)set({message:error.message});else set({message:"Registracija je poslana. Provjeri email i klikni potvrdu prije prijave.",authMode:"login",authPassword:"",authPassword2:""});
+}
+async function sendResetEmail(){if(!state.authEmail){set({message:"Unesi email za reset lozinke."});return;}const cleanUrl=window.location.href.split("#")[0].split("?")[0];const {error}=await supabase.auth.resetPasswordForEmail(state.authEmail,{redirectTo:cleanUrl});if(error)set({message:error.message});else set({message:"Poslali smo email za promjenu lozinke. Otvori email i klikni link."});}
+async function updatePassword(){if(!state.resetPassword1||!state.resetPassword2){set({message:"Unesi novu lozinku dva puta."});return;}if(state.resetPassword1!==state.resetPassword2){set({message:"Nove lozinke nisu iste."});return;}if(state.resetPassword1.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}const {error}=await supabase.auth.updateUser({password:state.resetPassword1});if(error)set({message:error.message});else set({message:"Lozinka je promijenjena. Možeš se prijaviti.",authMode:"login",resetPassword1:"",resetPassword2:""});}
+async function signOut(){await supabase.auth.signOut();set({session:null,profile:null,tab:"daily"});}
+async function addProject(){if(!isAdmin()||!state.project.name.trim())return;const {error}=await supabase.from("projects").insert(state.project);if(error)set({message:error.message});else{state.project={name:"",customer:"",location:""};refresh();}}
+async function archiveProject(id){const {error}=await supabase.from("projects").update({active:false}).eq("id",id);if(error)set({message:error.message});else refresh();}
+
+function syncEntryFormFromDom(){
+  [["e_date","work_date"],["e_user","user_id"],["e_project","project_id"],["e_start","start_time"],["e_end","end_time"],["e_break","break_minutes"],["e_note","note"]].forEach(([id,k])=>{
+    const el=document.getElementById(id);
+    if(el) state.entry[k]=el.value;
+  });
+}
+
+async function addEntry(){
+  syncEntryFormFromDom();
+  const e=state.entry;
+  const uid=isAdmin()?e.user_id:state.profile.id;
+  if(!uid){set({message:"Nije pronađen korisnik."});return;}
+  if(!e.project_id){set({message:"Obavezno izabrati projekat."});return;}
+  if(!e.work_date){set({message:"Izaberi datum."});return;}
+  const payload={user_id:uid,project_id:e.project_id,work_date:e.work_date,start_time:e.start_time,end_time:e.end_time,break_minutes:Number(e.break_minutes||0),hours:h(e.start_time,e.end_time,e.break_minutes),note:"",status:"approved"};
+  const {error}=await supabase.from("time_entries").insert(payload);
+  if(error)set({message:error.message});
+  else{state.entry.note="";state.month=e.work_date.slice(0,7);state.tab="monthly";refresh();}
+}
+async function delEntry(id){const {error}=await supabase.from("time_entries").delete().eq("id",id);if(error)set({message:error.message});else refresh();}
+async function saveProfile(id){const p=state.profiles.find(x=>x.id===id);const {error}=await supabase.from("profiles").update({full_name:p.full_name,position:p.position,role:p.role,active:p.active}).eq("id",id);if(error)set({message:error.message});else refresh();}
+
+
+
+function nextMonth(month){
+  const [y,m]=month.split("-").map(Number);
+  return new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
+}
+function monthTotalsFromEntries(){
+  const totals={};
+  state.entries.forEach(e=>{
+    totals[e.user_id]=(totals[e.user_id]||0)+Number(e.hours||0);
+  });
+  return totals;
+}
+function stundenkontoRows(){
+  const totals=monthTotalsFromEntries();
+  const balances=state.stkBalances||{};
+  return workers().map(p=>{
+    const bal=balances[p.id]||{};
+    const prev=Number(bal.carried_hours||0);
+    const monthHours=Math.round((totals[p.id]||0)*100)/100;
+    const paid=Number(bal.paid_hours||0);
+    const carry=Math.round((prev+monthHours-paid)*100)/100;
+    return {id:p.id,name:p.full_name||p.email||"Radnik",prev,monthHours,paid,carry};
+  });
+}
+async function loadStundenkontoBalances(){
+  if(!isAdmin()) return;
+  const {data,error}=await supabase.from("stundenkonto_balances").select("*").eq("month",state.month);
+  if(error){
+    state.stkBalances={};
+    state.message="Pokreni SQL fajl stundenkonto_balances.sql u Supabase za Stundenkonto.";
+    return;
+  }
+  const map={};
+  (data||[]).forEach(r=>{
+    map[r.user_id]={carried_hours:Number(r.carried_hours||0),paid_hours:Number(r.paid_hours||0)};
+  });
+  state.stkBalances=map;
+}
+function readStundenkontoInputs(){
+  const map={...(state.stkBalances||{})};
+  document.querySelectorAll("[data-carry]").forEach(el=>{
+    const uid=el.dataset.carry;
+    const raw=String(el.value||"").replace(",",".");
+    map[uid]={...(map[uid]||{}),carried_hours:Number(raw||0),paid_hours:Number(map[uid]?.paid_hours||0)};
+  });
+  document.querySelectorAll("[data-paid]").forEach(el=>{
+    const uid=el.dataset.paid;
+    const raw=String(el.value||"").replace(",",".");
+    map[uid]={...(map[uid]||{}),carried_hours:Number(map[uid]?.carried_hours||0),paid_hours:Number(raw||0)};
+  });
+  state.stkBalances=map;
+}
+async function saveAndTransferStundenkonto(){
+  readStundenkontoInputs();
+  const rows=stundenkontoRows();
+  const nm=nextMonth(state.month);
+
+  const currentRows=rows.map(r=>({
+    month:state.month,
+    user_id:r.id,
+    carried_hours:Number(state.stkBalances?.[r.id]?.carried_hours||0),
+    paid_hours:Number(state.stkBalances?.[r.id]?.paid_hours||0),
+    next_carry_hours:Number(r.carry||0)
+  }));
+
+  const nextRows=rows.map(r=>({
+    month:nm,
+    user_id:r.id,
+    carried_hours:Number(r.carry||0),
+    paid_hours:0,
+    next_carry_hours:0
+  }));
+
+  if(currentRows.length){
+    const {error:e1}=await supabase.from("stundenkonto_balances").upsert(currentRows,{onConflict:"month,user_id"});
+    if(e1) return {error:e1};
+    const {error:e2}=await supabase.from("stundenkonto_balances").upsert(nextRows,{onConflict:"month,user_id"});
+    if(e2) return {error:e2};
+  }
+  return {error:null,nextMonth:nm};
+}
+function stundenkontoView(){
+  const rows=stundenkontoRows();
+  const nm=nextMonth(state.month);
+  const totalPrev=Math.round(rows.reduce((s,r)=>s+r.prev,0)*100)/100;
+  const totalMonth=Math.round(rows.reduce((s,r)=>s+r.monthHours,0)*100)/100;
+  const totalPaid=Math.round(rows.reduce((s,r)=>s+r.paid,0)*100)/100;
+  const totalCarry=Math.round(rows.reduce((s,r)=>s+r.carry,0)*100)/100;
+
+  return `<section class="stkPanel">
+    <div class="head">
+      <h2>Stundenkonto</h2>
+      <input id="month" type="month" value="${state.month}">
+    </div>
+    <div class="stkSummary">
+      <div class="stkBox"><span>Ukupno preneseno</span><b>${totalPrev} h</b></div>
+      <div class="stkBox"><span>Ukupno sati mjesec</span><b>${totalMonth} h</b></div>
+      <div class="stkBox"><span>Isplaćeno</span><b>${totalPaid} h</b></div>
+      <div class="stkBox"><span>Prenos u ${nm}</span><b>${totalCarry} h</b></div>
+    </div>
+    <button class="primary" id="saveTransfer">Sačuvaj i prenesi u sljedeći mjesec</button>
+    <div class="stkTableWrap">
+      <table class="stkTable">
+        <thead><tr><th>Radnik</th><th>Preneseni sati</th><th>Sati u mjesecu</th><th>Isplaćeni sati</th><th>Prenos za sledeći mjesec</th></tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr>
+            <td><b>${esc(r.name)}</b></td>
+            <td><input data-carry="${r.id}" type="text" inputmode="decimal" value="${r.prev}"></td>
+            <td>${r.monthHours} h</td>
+            <td><input data-paid="${r.id}" type="text" inputmode="decimal" value="${r.paid}"></td>
+            <td class="${r.carry<0?"stkNegative":"stkPositive"}">${r.carry} h</td>
+          </tr>`).join("")}
+          <tr><td><b>UKUPNO</b></td><td><b>${totalPrev} h</b></td><td><b>${totalMonth} h</b></td><td><b>${totalPaid} h</b></td><td><b>${totalCarry} h</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="info">Upiši isplaćene sate i klikni dugme. Prenos se trajno čuva u Supabase i pojaviće se u sljedećem mjesecu.</div>
+  </section>`;
+}
+
+function loginView(){
+ const isReset=state.authMode==="reset";
+ app.innerHTML=`<main class="login"><section class="card">
+ <div class="logo">BSV</div><h1>${CONFIG.companyName} ${CONFIG.appName}</h1><p class="muted">Online evidencija sati za radnike i projekte.</p>
+ <div class="switch"><button id="modeLogin" class="${state.authMode==="login"?"active":""}">Prijava</button><button id="modeSignup" class="${state.authMode==="signup"?"active":""}">Novi korisnik</button></div>
+ ${isReset?`<div class="info">Unesi novu lozinku dva puta. Ovo radi nakon što klikneš link iz emaila za reset lozinke.</div><input id="resetPassword1" placeholder="Nova lozinka" type="password" value="${esc(state.resetPassword1)}"><input id="resetPassword2" placeholder="Ponovi novu lozinku" type="password" value="${esc(state.resetPassword2)}">`:`${state.authMode==="signup"?`<input id="authName" placeholder="Ime i prezime" value="${esc(state.authName)}">`:""}<input id="authEmail" placeholder="Email" value="${esc(state.authEmail)}"><input id="authPassword" placeholder="Lozinka" type="password" value="${esc(state.authPassword)}">${state.authMode==="signup"?`<input id="authPassword2" placeholder="Ponovi lozinku" type="password" value="${esc(state.authPassword2)}">`:""}`}
+ ${state.message?`<div class="msg">${esc(state.message)}</div>`:""}
+ ${isReset?`<button class="primary" id="updatePassword">Promijeni lozinku</button>`:`<button class="primary" id="authBtn">${state.authMode==="login"?"Prijavi se":"Kreiraj korisnika"}</button>`}
+ ${state.authMode==="login"?`<button class="linkbtn" id="forgotBtn">Zaboravljena lozinka?</button>`:""}
+ </section></main>`;
+ bind("modeLogin","click",()=>set({authMode:"login",message:""}));bind("modeSignup","click",()=>set({authMode:"signup",message:""}));
+ if(isReset){bindInput("resetPassword1","resetPassword1");bindInput("resetPassword2","resetPassword2");bind("updatePassword","click",updatePassword);}
+ else{bindInput("authEmail","authEmail");bindInput("authPassword","authPassword");if(state.authMode==="signup"){bindInput("authName","authName");bindInput("authPassword2","authPassword2");}bind("authBtn","click",()=>state.authMode==="login"?signIn():signUp());bind("forgotBtn","click",sendResetEmail);}
+}
+function stat(t,v){return `<div class="stat"><span>${esc(t)}</span><b>${esc(v)}</b></div>`;}
+function summary(title,rows){return `<div class="summary"><h3>${esc(title)}</h3>${rows.length?rows.map(r=>`<div class="sumrow"><span>${esc(r.name)}</span><b>${r.hours} h</b></div>`).join(""):`<p class="muted">Nema unosa.</p>`}</div>`;}
+
+function calendarDashboard(rows){
+  const [year,monthNum]=state.month.split("-").map(Number);
+  const monthNames=["Januar","Februar","Mart","April","Maj","Juni","Juli","August","Septembar","Oktobar","Novembar","Decembar"];
+  const first=new Date(Date.UTC(year,monthNum-1,1));
+  const days=new Date(Date.UTC(year,monthNum,0)).getUTCDate();
+  const offset=(first.getUTCDay()+6)%7;
+  const totals={};
+  rows.forEach(r=>{
+    totals[r.work_date]=(totals[r.work_date]||0)+Number(r.hours||0);
+  });
+  let cells="";
+  for(let i=0;i<offset;i++) cells+=`<div class="calDay empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const iso=`${state.month}-${String(d).padStart(2,"0")}`;
+    const date=new Date(Date.UTC(year,monthNum-1,d));
+    const weekend=date.getUTCDay()===0||date.getUTCDay()===6;
+    const hrs=Math.round((totals[iso]||0)*100)/100;
+    cells+=`<div class="calDay ${weekend?"weekend":""}" data-day-open="${iso}">
+      <div class="calNum">${d}</div>
+      ${hrs?`<div class="calHours">${hrs} h</div>`:""}
+    </div>`;
+  }
+  return `<section class="calBox">
+    <div class="calHead"><h2>${monthNames[monthNum-1]} ${year}</h2><input id="month" type="month" value="${state.month}"></div>
+    <div class="calWeek">${["Pon","Uto","Sri","Čet","Pet","Sub","Ned"].map(x=>`<div>${x}</div>`).join("")}</div>
+    <div class="calGrid">${cells}</div>
+  </section>`;
+}
+
+function entryForm(){
+ const w=workers(),p=activeProjects(),e=state.entry;
+ return `<div class="form">
+<label>Datum<input id="e_date" type="date" value="${e.work_date}"></label>
+${isAdmin()?`<label>Radnik<select id="e_user">${w.map(x=>`<option value="${x.id}" ${e.user_id===x.id?"selected":""}>${esc(x.full_name)}</option>`).join("")}</select></label>`:`<div class="info">Radnik: <b>${esc(state.profile?.full_name)}</b></div>`}
+<label>Projekat<select id="e_project">
+<option value="" ${!e.project_id?"selected":""}>Obavezno izabrati projekat</option>
+${p.map(x=>`<option value="${x.id}" ${e.project_id===x.id?"selected":""}>${esc(x.name)}${x.customer ? " · " + esc(x.customer) : ""}</option>`).join("")}
+</select></label>
+<div class="grid three">
+<label>Od<input id="e_start" type="time" value="${e.start_time}"></label>
+<label>Do<input id="e_end" type="time" value="${e.end_time}"></label>
+<label>Pauza min<input id="e_break" type="text" inputmode="numeric" pattern="[0-9]*" value="${e.break_minutes}"></label>
+</div>
+<div class="info">Obračun: <b>${h(e.start_time,e.end_time,e.break_minutes)} h</b></div>
+<button class="primary" id="addEntry">Sačuvaj sate</button></div>`;
+}
+
+function entriesTable(rows){if(!rows.length)return `<div class="empty">Nema unosa.</div>`;return `<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Radnik</th><th>Projekat</th><th>Klijent/Lokacija</th><th>Vrijeme</th><th>Pauza</th><th>Sati</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${e.work_date}</td><td>${esc(e.person_name)}</td><td>${esc(e.project_name)}</td><td>${esc(e.customer||"-")} · ${esc(e.location||"-")}</td><td>${e.start_time} - ${e.end_time}</td><td>${e.break_minutes} min</td><td><b>${e.hours} h</b></td><td><button data-del="${e.id}">Obriši</button></td></tr>`).join("")}</tbody></table></div>`;}
+function mainView(){const rows=filtered(),monthTotal=Math.round(rows.reduce((s,e)=>s+Number(e.hours||0),0)*100)/100,daily=state.entries.filter(e=>e.work_date===state.entry.work_date);app.innerHTML=`<main class="app"><header class="top"><div><p class="muted">Prijavljen: <b>${esc(state.profile?.full_name||state.session.user.email)}</b> · ${isAdmin()?"Admin":"Radnik"}</p><h1>${CONFIG.companyName} ${CONFIG.appName}</h1></div><nav>${["dashboard","daily","monthly"].map(k=>`<button data-tab="${k}" class="${state.tab===k?"active":""}">${k==="dashboard"?"Dashboard":k==="daily"?"Unos sati":"Mjesečno"}</button>`).join("")}${isAdmin()?`<button data-tab="projects" class="${state.tab==="projects"?"active":""}">Projekti</button><button data-tab="people" class="${state.tab==="people"?"active":""}">Radnici</button><button data-tab="stundenkonto" class="${state.tab==="stundenkonto"?"active":""}">Stundenkonto</button>`:""}<button id="refresh">Osvježi</button><button id="logout">Odjava</button></nav></header>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}<section class="stats">${stat(isAdmin()?"Radnika":"Moj profil",isAdmin()?workers().length:state.profile?.full_name)}${stat("Projekata",activeProjects().length)}${stat("Sati u mjesecu",monthTotal+" h")}${stat("Unosa",rows.length)}</section>${content(rows,daily)}</main>`;document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>set({tab:b.dataset.tab}));bind("refresh","click",refresh);bind("logout","click",signOut);bindDynamic();}
+function content(rows,daily){if(state.tab==="dashboard")return isAdmin()?`<section class="panel"><div class="head"><h2>Pregled za mjesec</h2><input id="month" type="month" value="${state.month}"></div><div class="grid two">${summary("Sati po projektu",group(rows,"project_name"))}${summary("Sati po radniku",group(rows,"person_name"))}</div></section>`:`${calendarDashboard(rows)}`;if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;if(state.tab==="monthly")return `<section class="panel"><div class="head"><h2>Mjesečni pregled</h2><input id="month" type="month" value="${state.month}">${isAdmin()?`<select id="workerFilter"><option value="all">Svi radnici</option>${workers().map(p=>`<option value="${p.id}" ${state.workerFilter===p.id?"selected":""}>${esc(p.full_name)}</option>`).join("")}</select>`:""}<select id="projectFilter"><option value="all">Svi projekti</option>${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}</select><input id="search" placeholder="Traži..." value="${esc(state.search)}"><button id="excel">Excel Export</button></div>${entriesTable(rows)}</section>`;if(state.tab==="projects"&&isAdmin())return `<section class="grid two"><div class="panel"><h2>Dodaj projekat</h2><input id="p_name" placeholder="Naziv projekta" value="${esc(state.project.name)}"><input id="p_customer" placeholder="Klijent" value="${esc(state.project.customer)}"><input id="p_location" placeholder="Lokacija" value="${esc(state.project.location)}"><button class="primary" id="addProject">Dodaj projekat</button></div><div class="panel"><h2>Projekti</h2>${activeProjects().map(p=>`<div class="row"><span><b>${esc(p.name)}</b><small>${esc(p.customer||"-")} · ${esc(p.location||"-")}</small></span><button data-archive-project="${p.id}">Obriši</button></div>`).join("")}</div></section>`;if(state.tab==="people"&&isAdmin())return `<section class="panel"><h2>Radnici i admini</h2><p class="muted">Radnik se kreira na login ekranu preko “Novi korisnik”. Ovdje mu mijenjaš ime, poziciju i prava.</p>${state.profiles.filter(p=>p.active!==false).map(p=>`<div class="personrow"><input data-p-name="${p.id}" value="${esc(p.full_name||"")}"><input data-p-position="${p.id}" placeholder="Pozicija" value="${esc(p.position||"")}"><select data-p-role="${p.id}" ${p.id===state.profile.id?"disabled":""}><option value="worker" ${p.role==="worker"?"selected":""}>Radnik</option><option value="admin" ${p.role==="admin"?"selected":""}>Admin</option></select><span class="muted">${esc(p.email)}</span><button data-save-profile="${p.id}">Sačuvaj</button></div>`).join("")}</section>`;if(state.tab==="stundenkonto"&&isAdmin())return stundenkontoView();return "";}
+function bindDynamic(){const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=()=>{state.month=monthEl.value;refresh();};document.querySelectorAll("[data-day-open]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.dayOpen;state.month=el.dataset.dayOpen.slice(0,7);state.tab="daily";refresh();});const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});/* entry fields are read only on save - no live refresh */[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>archiveProject(b.dataset.archiveProject));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));
+document.querySelectorAll("[data-paid],[data-carry]").forEach(el=>{
+  el.oninput=()=>readStundenkontoInputs();
+  el.onchange=()=>readStundenkontoInputs();
+});
+const saveTransferBtn=document.getElementById("saveTransfer");
+if(saveTransferBtn){
+  saveTransferBtn.onclick=async()=>{
+    const result=await saveAndTransferStundenkonto();
+    if(result.error){
+      set({message:result.error.message});
+    }else{
+      set({message:`Prenos je sačuvan za ${result.nextMonth}.`});
+      refresh();
+    }
+  };
+}
+
+document.querySelectorAll("[data-paid]").forEach(el=>{
+  el.oninput=()=>{
+    const paid=loadPaidHours();
+    const raw=String(el.value||"").replace(",",".");
+    paid[el.dataset.paid]=Number(raw||0);
+    savePaidHours(paid);
+  };
+});
+}
+function bind(id,event,fn){const el=document.getElementById(id);if(el)el.addEventListener(event,fn);}
+function bindInput(id,key){const el=document.getElementById(id);if(el)el.oninput=()=>state[key]=el.value;}
+function render(){if(!state.session?.user||state.authMode==="reset")loginView();else if(state.loading)app.innerHTML='<div class="login"><div class="card">Učitavanje...</div></div>';else mainView();}
+supabase.auth.getSession().then(({data})=>{state.session=data.session;render();refresh();});
+supabase.auth.onAuthStateChange((event,session)=>{state.session=session;if(event==="PASSWORD_RECOVERY")state.authMode="reset";render();if(session&&state.authMode!=="reset")refresh();});
+if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
+</script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations?.().then(regs => regs.forEach(r => r.update?.()));
+}
+if (window.caches) {
+  caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(()=>{});
+}
+</script>
+
+</body>
+</html>
