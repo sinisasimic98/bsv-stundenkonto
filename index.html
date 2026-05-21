@@ -1,3 +1,6 @@
+<!-- STUNDENKONTO_SUPABASE_FINAL -->
+<!-- TRANSFER_FINAL_STUNDENKONTO -->
+<!-- AUTO_CARRY_FIXED_JUNE -->
 <!-- AUTO_CARRY_STUNDENKONTO -->
 <!-- STUNDENKONTO_ADMIN_TAB -->
 <!-- KEYBOARD_FINAL_FIX_2026: entry form does not rerender while typing -->
@@ -97,7 +100,7 @@ let state = {
   resetPassword1:"", resetPassword2:"",
   workerFilter:"all", projectFilter:"all", search:"",
   entry:{work_date:todayISO(), user_id:"", project_id:"", start_time:"08:00", end_time:"16:00", break_minutes:30, note:""},
-  project:{name:"",customer:"",location:""}, paidHours:{}
+  project:{name:"",customer:"",location:""}, stkBalances:{}, stkBalances:{}
 };
 
 function h(start,end,br){if(!start||!end)return 0;const [sh,sm]=start.split(":").map(Number),[eh,em]=end.split(":").map(Number);return Math.round(Math.max(0,eh*60+em-(sh*60+sm)-Number(br||0))/60*100)/100;}
@@ -298,7 +301,7 @@ async function refresh(){
     supabase.from("projects").select("*").order("name"),
     supabase.from("time_entries_view").select("*").gte("work_date",`${state.month}-01`).lt("work_date",nextMonthStart(state.month)).order("work_date",{ascending:false})
   ]);
-  state.profiles=pr.data||[];state.projects=pj.data||[];state.entries=en.data||[];
+  state.profiles=pr.data||[];state.projects=pj.data||[];state.entries=en.data||[];if(isAdmin()) await loadStundenkontoBalances();
   const w=workers(),p=activeProjects();
   if(isAdmin()){
     if(!state.entry.user_id || !w.find(x=>x.id===state.entry.user_id)) state.entry.user_id=w[0]?.id||state.profile.id;
@@ -348,63 +351,31 @@ async function saveProfile(id){const p=state.profiles.find(x=>x.id===id);const {
 
 
 
-function paidKey(month=state.month){
-  return `stundenkonto_paid_${month}`;
-}
-function carryKey(month=state.month){
-  return `stundenkonto_carry_${month}`;
-}
-function loadJson(key){
-  try{
-    return JSON.parse(localStorage.getItem(key)||"{}");
-  }catch(e){
-    return {};
-  }
-}
-function saveJson(key,obj){
-  localStorage.setItem(key,JSON.stringify(obj||{}));
-}
-function loadPaidHours(month=state.month){
-  return loadJson(paidKey(month));
-}
-function savePaidHours(obj,month=state.month){
-  saveJson(paidKey(month),obj);
-}
-function loadCarryHours(month=state.month){
-  return loadJson(carryKey(month));
-}
-function saveCarryHours(obj,month=state.month){
-  saveJson(carryKey(month),obj);
-}
-function previousMonth(month){
-  const [y,m]=month.split("-").map(Number);
-  const d=new Date(Date.UTC(y,m-2,1));
-  return d.toISOString().slice(0,7);
-}
+
+
+
 function nextMonth(month){
   const [y,m]=month.split("-").map(Number);
-  const d=new Date(Date.UTC(y,m,1));
-  return d.toISOString().slice(0,7);
+  return new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
+}
+function monthTotalsFromEntries(){
+  const totals={};
+  state.entries.forEach(e=>{
+    totals[e.user_id]=(totals[e.user_id]||0)+Number(e.hours||0);
+  });
+  return totals;
+}
+function balanceFor(userId){
+  return state.stkBalances?.[userId] || {carried_hours:0, paid_hours:0};
 }
 function stundenkontoRows(){
-  const paid=loadPaidHours(state.month);
-  const manualCarry=loadCarryHours(state.month);
-  const previousCarry=loadCarryHours(previousMonth(state.month));
-  const previousPaid=loadPaidHours(previousMonth(state.month));
-
-  const currentTotals={};
-  state.entries.forEach(e=>{
-    currentTotals[e.user_id]=(currentTotals[e.user_id]||0)+Number(e.hours||0);
-  });
+  const totals=monthTotalsFromEntries();
 
   return workers().map(p=>{
-    const prev =
-      manualCarry[p.id] !== undefined
-        ? Number(manualCarry[p.id]||0)
-        : Number(previousCarry[p.id]||0);
-
-    const monthHours=Math.round((currentTotals[p.id]||0)*100)/100;
-    const paidVal=Number(paid[p.id]||0);
+    const bal=balanceFor(p.id);
+    const prev=Number(bal.carried_hours||0);
+    const monthHours=Math.round((totals[p.id]||0)*100)/100;
+    const paidVal=Number(bal.paid_hours||0);
     const carry=Math.round((prev+monthHours-paidVal)*100)/100;
     return {
       id:p.id,
@@ -416,14 +387,84 @@ function stundenkontoRows(){
     };
   });
 }
-function saveCarryToNextMonth(){
+function readStundenkontoInputs(){
+  const balances={...(state.stkBalances||{})};
+
+  
+
+  
+
+  state.stkBalances=balances;
+  return balances;
+}
+async function loadStundenkontoBalances(){
+  if(!isAdmin()) return;
+  const {data,error}=await supabase
+    .from("stundenkonto_balances")
+    .select("*")
+    .eq("month",state.month);
+
+  if(error){
+    state.message="Stundenkonto tabela nije spremna. Pokreni SQL fajl stundenkonto_balances.sql u Supabase.";
+    state.stkBalances={};
+    return;
+  }
+
+  const map={};
+  (data||[]).forEach(r=>{
+    map[r.user_id]={carried_hours:Number(r.carried_hours||0),paid_hours:Number(r.paid_hours||0)};
+  });
+  state.stkBalances=map;
+}
+async function saveCurrentBalances(){
+  readStundenkontoInputs();
+  const rows=stundenkontoRows();
+  const payload=rows.map(r=>({
+    month:state.month,
+    user_id:r.id,
+    carried_hours:Number(state.stkBalances?.[r.id]?.carried_hours||0),
+    paid_hours:Number(state.stkBalances?.[r.id]?.paid_hours||0),
+    next_carry_hours:Number(r.carry||0)
+  }));
+
+  if(!payload.length) return {error:null};
+
+  return await supabase
+    .from("stundenkonto_balances")
+    .upsert(payload,{onConflict:"month,user_id"});
+}
+async function saveTransferToNextMonth(){
+  readStundenkontoInputs();
   const rows=stundenkontoRows();
   const nm=nextMonth(state.month);
-  const carry=loadCarryHours(nm);
-  rows.forEach(r=>{
-    carry[r.id]=r.carry;
-  });
-  saveCarryHours(carry,nm);
+
+  const currentPayload=rows.map(r=>({
+    month:state.month,
+    user_id:r.id,
+    carried_hours:Number(state.stkBalances?.[r.id]?.carried_hours||0),
+    paid_hours:Number(state.stkBalances?.[r.id]?.paid_hours||0),
+    next_carry_hours:Number(r.carry||0)
+  }));
+
+  const nextPayload=rows.map(r=>({
+    month:nm,
+    user_id:r.id,
+    carried_hours:Number(r.carry||0),
+    paid_hours:0,
+    next_carry_hours:0
+  }));
+
+  const {error:e1}=await supabase
+    .from("stundenkonto_balances")
+    .upsert(currentPayload,{onConflict:"month,user_id"});
+  if(e1) return {error:e1};
+
+  const {error:e2}=await supabase
+    .from("stundenkonto_balances")
+    .upsert(nextPayload,{onConflict:"month,user_id"});
+  if(e2) return {error:e2};
+
+  return {error:null,nextMonth:nm};
 }
 function stundenkontoView(){
   const rows=stundenkontoRows();
@@ -431,6 +472,7 @@ function stundenkontoView(){
   const totalMonth=Math.round(rows.reduce((s,r)=>s+r.monthHours,0)*100)/100;
   const totalPaid=Math.round(rows.reduce((s,r)=>s+r.paid,0)*100)/100;
   const totalCarry=Math.round(rows.reduce((s,r)=>s+r.carry,0)*100)/100;
+  const nm=nextMonth(state.month);
 
   return `<section class="stkPanel">
     <div class="head">
@@ -441,8 +483,9 @@ function stundenkontoView(){
       <div class="stkBox"><span>Ukupno preneseno</span><b>${totalPrev} h</b></div>
       <div class="stkBox"><span>Ukupno sati mjesec</span><b>${totalMonth} h</b></div>
       <div class="stkBox"><span>Isplaćeno</span><b>${totalPaid} h</b></div>
-      <div class="stkBox"><span>Prenos dalje</span><b>${totalCarry} h</b></div>
+      <div class="stkBox"><span>Prenos u ${nm}</span><b>${totalCarry} h</b></div>
     </div>
+    <button class="primary" id="saveTransfer">Sačuvaj i prenesi u sljedeći mjesec</button>
     <div class="stkTableWrap">
       <table class="stkTable">
         <thead>
@@ -472,7 +515,7 @@ function stundenkontoView(){
         </tbody>
       </table>
     </div>
-    <div class="info">Formula: Prenos za sledeći mjesec = Preneseni sati + Sati u mjesecu − Isplaćeni sati. Kada uneseš isplaćene sate, prenos se automatski čuva za sljedeći mjesec.</div>
+    <div class="info">Ova verzija čuva Stundenkonto u Supabase. Kada klikneš dugme, prenos se trajno upisuje u sljedeći mjesec.</div>
   </section>`;
 }
 
@@ -527,24 +570,33 @@ function entriesTable(rows){if(!rows.length)return `<div class="empty">Nema unos
 function mainView(){const rows=filtered(),monthTotal=Math.round(rows.reduce((s,e)=>s+Number(e.hours||0),0)*100)/100,daily=state.entries.filter(e=>e.work_date===state.entry.work_date);app.innerHTML=`<main class="app"><header class="top"><div><p class="muted">Prijavljen: <b>${esc(state.profile?.full_name||state.session.user.email)}</b> · ${isAdmin()?"Admin":"Radnik"}</p><h1>${CONFIG.companyName} ${CONFIG.appName}</h1></div><nav>${["dashboard","daily","monthly"].map(k=>`<button data-tab="${k}" class="${state.tab===k?"active":""}">${k==="dashboard"?"Dashboard":k==="daily"?"Unos sati":"Mjesečno"}</button>`).join("")}${isAdmin()?`<button data-tab="projects" class="${state.tab==="projects"?"active":""}">Projekti</button><button data-tab="people" class="${state.tab==="people"?"active":""}">Radnici</button><button data-tab="stundenkonto" class="${state.tab==="stundenkonto"?"active":""}">Stundenkonto</button>`:""}<button id="refresh">Osvježi</button><button id="logout">Odjava</button></nav></header>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}<section class="stats">${stat(isAdmin()?"Radnika":"Moj profil",isAdmin()?workers().length:state.profile?.full_name)}${stat("Projekata",activeProjects().length)}${stat("Sati u mjesecu",monthTotal+" h")}${stat("Unosa",rows.length)}</section>${content(rows,daily)}</main>`;document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>set({tab:b.dataset.tab}));bind("refresh","click",refresh);bind("logout","click",signOut);bindDynamic();}
 function content(rows,daily){if(state.tab==="dashboard")return isAdmin()?`<section class="panel"><div class="head"><h2>Pregled za mjesec</h2><input id="month" type="month" value="${state.month}"></div><div class="grid two">${summary("Sati po projektu",group(rows,"project_name"))}${summary("Sati po radniku",group(rows,"person_name"))}</div></section>`:`${calendarDashboard(rows)}`;if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;if(state.tab==="monthly")return `<section class="panel"><div class="head"><h2>Mjesečni pregled</h2><input id="month" type="month" value="${state.month}">${isAdmin()?`<select id="workerFilter"><option value="all">Svi radnici</option>${workers().map(p=>`<option value="${p.id}" ${state.workerFilter===p.id?"selected":""}>${esc(p.full_name)}</option>`).join("")}</select>`:""}<select id="projectFilter"><option value="all">Svi projekti</option>${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}</select><input id="search" placeholder="Traži..." value="${esc(state.search)}"><button id="excel">Excel Export</button></div>${entriesTable(rows)}</section>`;if(state.tab==="projects"&&isAdmin())return `<section class="grid two"><div class="panel"><h2>Dodaj projekat</h2><input id="p_name" placeholder="Naziv projekta" value="${esc(state.project.name)}"><input id="p_customer" placeholder="Klijent" value="${esc(state.project.customer)}"><input id="p_location" placeholder="Lokacija" value="${esc(state.project.location)}"><button class="primary" id="addProject">Dodaj projekat</button></div><div class="panel"><h2>Projekti</h2>${activeProjects().map(p=>`<div class="row"><span><b>${esc(p.name)}</b><small>${esc(p.customer||"-")} · ${esc(p.location||"-")}</small></span><button data-archive-project="${p.id}">Obriši</button></div>`).join("")}</div></section>`;if(state.tab==="people"&&isAdmin())return `<section class="panel"><h2>Radnici i admini</h2><p class="muted">Radnik se kreira na login ekranu preko “Novi korisnik”. Ovdje mu mijenjaš ime, poziciju i prava.</p>${state.profiles.filter(p=>p.active!==false).map(p=>`<div class="personrow"><input data-p-name="${p.id}" value="${esc(p.full_name||"")}"><input data-p-position="${p.id}" placeholder="Pozicija" value="${esc(p.position||"")}"><select data-p-role="${p.id}" ${p.id===state.profile.id?"disabled":""}><option value="worker" ${p.role==="worker"?"selected":""}>Radnik</option><option value="admin" ${p.role==="admin"?"selected":""}>Admin</option></select><span class="muted">${esc(p.email)}</span><button data-save-profile="${p.id}">Sačuvaj</button></div>`).join("")}</section>`;if(state.tab==="stundenkonto"&&isAdmin())return stundenkontoView();return "";}
 function bindDynamic(){const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=()=>{state.month=monthEl.value;refresh();};document.querySelectorAll("[data-day-open]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.dayOpen;state.month=el.dataset.dayOpen.slice(0,7);state.tab="daily";refresh();});const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});/* entry fields are read only on save - no live refresh */[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>archiveProject(b.dataset.archiveProject));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));
-document.querySelectorAll("[data-paid]").forEach(el=>{
+document.querySelectorAll("[data-paid],[data-carry]").forEach(el=>{
   el.oninput=()=>{
-    const paid=loadPaidHours();
-    const raw=String(el.value||"").replace(",",".");
-    paid[el.dataset.paid]=Number(raw||0);
-    savePaidHours(paid);
-    saveCarryToNextMonth();
+    readStundenkontoInputs();
+  };
+  el.onchange=()=>{
+    readStundenkontoInputs();
   };
 });
-document.querySelectorAll("[data-carry]").forEach(el=>{
-  el.oninput=()=>{
-    const carry=loadCarryHours();
-    const raw=String(el.value||"").replace(",",".");
-    carry[el.dataset.carry]=Number(raw||0);
-    saveCarryHours(carry);
-    saveCarryToNextMonth();
+const saveTransferBtn=document.getElementById("saveTransfer");
+if(saveTransferBtn){
+  saveTransferBtn.onclick=async()=>{
+    const result=await saveTransferToNextMonth();
+    if(result.error){
+      set({message:result.error.message});
+    }else{
+      set({message:`Prenos je trajno sačuvan za ${result.nextMonth}.`});
+      refresh();
+    }
   };
-});
+}
+
+
+}
+
+
+
+
 }
 function bind(id,event,fn){const el=document.getElementById(id);if(el)el.addEventListener(event,fn);}
 function bindInput(id,key){const el=document.getElementById(id);if(el)el.oninput=()=>state[key]=el.value;}
