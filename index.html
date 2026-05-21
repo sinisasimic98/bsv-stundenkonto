@@ -1,3 +1,4 @@
+<!-- AUTO_CARRY_STUNDENKONTO -->
 <!-- STUNDENKONTO_ADMIN_TAB -->
 <!-- KEYBOARD_FINAL_FIX_2026: entry form does not rerender while typing -->
 <!doctype html>
@@ -346,35 +347,62 @@ async function delEntry(id){const {error}=await supabase.from("time_entries").de
 async function saveProfile(id){const p=state.profiles.find(x=>x.id===id);const {error}=await supabase.from("profiles").update({full_name:p.full_name,position:p.position,role:p.role,active:p.active}).eq("id",id);if(error)set({message:error.message});else refresh();}
 
 
-function paidKey(){
-  return `stundenkonto_paid_${state.month}`;
+
+function paidKey(month=state.month){
+  return `stundenkonto_paid_${month}`;
 }
-function loadPaidHours(){
+function carryKey(month=state.month){
+  return `stundenkonto_carry_${month}`;
+}
+function loadJson(key){
   try{
-    return JSON.parse(localStorage.getItem(paidKey())||"{}");
+    return JSON.parse(localStorage.getItem(key)||"{}");
   }catch(e){
     return {};
   }
 }
-function savePaidHours(obj){
-  localStorage.setItem(paidKey(),JSON.stringify(obj||{}));
+function saveJson(key,obj){
+  localStorage.setItem(key,JSON.stringify(obj||{}));
+}
+function loadPaidHours(month=state.month){
+  return loadJson(paidKey(month));
+}
+function savePaidHours(obj,month=state.month){
+  saveJson(paidKey(month),obj);
+}
+function loadCarryHours(month=state.month){
+  return loadJson(carryKey(month));
+}
+function saveCarryHours(obj,month=state.month){
+  saveJson(carryKey(month),obj);
 }
 function previousMonth(month){
   const [y,m]=month.split("-").map(Number);
   const d=new Date(Date.UTC(y,m-2,1));
   return d.toISOString().slice(0,7);
 }
+function nextMonth(month){
+  const [y,m]=month.split("-").map(Number);
+  const d=new Date(Date.UTC(y,m,1));
+  return d.toISOString().slice(0,7);
+}
 function stundenkontoRows(){
-  const paid=loadPaidHours();
-  const currentTotals={};
-  const workersList=workers();
+  const paid=loadPaidHours(state.month);
+  const manualCarry=loadCarryHours(state.month);
+  const previousCarry=loadCarryHours(previousMonth(state.month));
+  const previousPaid=loadPaidHours(previousMonth(state.month));
 
+  const currentTotals={};
   state.entries.forEach(e=>{
     currentTotals[e.user_id]=(currentTotals[e.user_id]||0)+Number(e.hours||0);
   });
 
-  return workersList.map(p=>{
-    const prev=Number(p.carry_hours||0);
+  return workers().map(p=>{
+    const prev =
+      manualCarry[p.id] !== undefined
+        ? Number(manualCarry[p.id]||0)
+        : Number(previousCarry[p.id]||0);
+
     const monthHours=Math.round((currentTotals[p.id]||0)*100)/100;
     const paidVal=Number(paid[p.id]||0);
     const carry=Math.round((prev+monthHours-paidVal)*100)/100;
@@ -387,6 +415,15 @@ function stundenkontoRows(){
       carry
     };
   });
+}
+function saveCarryToNextMonth(){
+  const rows=stundenkontoRows();
+  const nm=nextMonth(state.month);
+  const carry=loadCarryHours(nm);
+  rows.forEach(r=>{
+    carry[r.id]=r.carry;
+  });
+  saveCarryHours(carry,nm);
 }
 function stundenkontoView(){
   const rows=stundenkontoRows();
@@ -420,7 +457,7 @@ function stundenkontoView(){
         <tbody>
           ${rows.map(r=>`<tr>
             <td><b>${esc(r.name)}</b></td>
-            <td>${r.prev} h</td>
+            <td><input data-carry="${r.id}" type="text" inputmode="decimal" value="${r.prev}"></td>
             <td>${r.monthHours} h</td>
             <td><input data-paid="${r.id}" type="text" inputmode="decimal" value="${r.paid}"></td>
             <td class="${r.carry<0?"stkNegative":"stkPositive"}">${r.carry} h</td>
@@ -435,7 +472,7 @@ function stundenkontoView(){
         </tbody>
       </table>
     </div>
-    <div class="info">Formula: Prenos za sledeći mjesec = Preneseni sati + Sati u mjesecu − Isplaćeni sati.</div>
+    <div class="info">Formula: Prenos za sledeći mjesec = Preneseni sati + Sati u mjesecu − Isplaćeni sati. Kada uneseš isplaćene sate, prenos se automatski čuva za sljedeći mjesec.</div>
   </section>`;
 }
 
@@ -496,6 +533,16 @@ document.querySelectorAll("[data-paid]").forEach(el=>{
     const raw=String(el.value||"").replace(",",".");
     paid[el.dataset.paid]=Number(raw||0);
     savePaidHours(paid);
+    saveCarryToNextMonth();
+  };
+});
+document.querySelectorAll("[data-carry]").forEach(el=>{
+  el.oninput=()=>{
+    const carry=loadCarryHours();
+    const raw=String(el.value||"").replace(",",".");
+    carry[el.dataset.carry]=Number(raw||0);
+    saveCarryHours(carry);
+    saveCarryToNextMonth();
   };
 });
 }
