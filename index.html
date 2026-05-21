@@ -28,133 +28,50 @@ nav{display:flex;gap:8px;flex-wrap:wrap}.muted{color:#64748b;font-size:14px;marg
 .linkbtn{border:0;background:transparent;color:#2563eb;padding:6px;text-decoration:underline}
 @media(max-width:900px){.stats,.two,.three,.personrow{grid-template-columns:1fr}.top{align-items:stretch}nav button{flex:1}}
 
-/* DASHBOARD MONTH CALENDAR */
-.dashCalendarWrap{
+.dashboardSimple{
   background:#fff;
   border:1px solid #e2e8f0;
-  border-radius:28px;
+  border-radius:24px;
   padding:18px;
-  box-shadow:0 10px 30px rgba(15,23,42,.04);
 }
-.dashCalendarHead{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  background:#f8fafc;
-  border-radius:22px;
-  padding:14px 16px;
-  margin-bottom:14px;
-}
-.dashCalendarHead h2{
-  font-size:34px;
-  line-height:1.1;
-  margin:0;
-}
-.dashCalendarHead input{
-  max-width:170px;
-}
-.dashWeekdays,
-.dashCalendarGrid{
+.dashboardDays{
   display:grid;
-  grid-template-columns:repeat(7,minmax(0,1fr));
+  grid-template-columns:repeat(7,1fr);
   gap:8px;
+  margin-top:12px;
 }
-.dashWeekday{
-  text-align:center;
-  font-weight:700;
-  color:#64748b;
-  padding:8px 0;
-  font-size:14px;
-}
-.dashDay{
-  min-height:104px;
-  border:1px solid #e2e8f0;
+.dashboardDay{
   background:#f8fafc;
-  border-radius:18px;
-  padding:9px;
-  overflow:hidden;
-  cursor:pointer;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
+  border:1px solid #e2e8f0;
+  border-radius:16px;
+  min-height:85px;
+  padding:8px;
 }
-.dashDay:hover{
-  border-color:#0f172a;
+.dashboardDay b{
+  display:block;
+  font-size:18px;
 }
-.dashDay.empty{
-  visibility:hidden;
-}
-.dashDay.weekend{
-  background:#f1f5f9;
-}
-.dashDayNum{
-  font-weight:800;
-  font-size:20px;
-}
-.dashHours{
-  width:max-content;
-  max-width:100%;
-  border-radius:9px;
-  padding:4px 7px;
-  background:#fecaca;
-  color:#7f1d1d;
+.dashboardHours{
+  margin-top:8px;
+  display:inline-block;
+  background:#dbeafe;
+  color:#1e3a8a;
+  padding:4px 8px;
+  border-radius:8px;
   font-size:13px;
   font-weight:700;
-  white-space:nowrap;
-}
-.dashDay.weekend .dashHours{
-  background:#bbf7d0;
-  color:#14532d;
-}
-.dashProjects{
-  font-size:11px;
-  line-height:1.25;
-  color:#475569;
-  overflow:hidden;
 }
 @media(max-width:700px){
-  .dashCalendarWrap{
-    padding:10px;
-    border-radius:22px;
-    margin-left:-10px;
-    margin-right:-10px;
-  }
-  .dashCalendarHead{
-    padding:12px;
-    border-radius:18px;
-  }
-  .dashCalendarHead h2{
-    font-size:24px;
-  }
-  .dashCalendarHead input{
-    max-width:132px;
-    font-size:13px;
-    padding:8px;
-  }
-  .dashWeekdays,
-  .dashCalendarGrid{
-    gap:4px;
-  }
-  .dashWeekday{
-    font-size:11px;
-    padding:5px 0;
-  }
-  .dashDay{
-    min-height:68px;
-    border-radius:12px;
+  .dashboardDays{gap:4px}
+  .dashboardDay{
+    min-height:60px;
     padding:5px;
-    gap:4px;
+    border-radius:10px;
   }
-  .dashDayNum{
-    font-size:15px;
-  }
-  .dashHours{
+  .dashboardDay b{font-size:14px}
+  .dashboardHours{
     font-size:10px;
-    padding:3px 5px;
-  }
-  .dashProjects{
-    display:none;
+    padding:2px 5px;
   }
 }
 
@@ -449,57 +366,43 @@ function summary(title,rows){return `<div class="summary"><h3>${esc(title)}</h3>
 
 function dashboardCalendar(rows){
   const [year,monthNum]=state.month.split("-").map(Number);
-  const first=new Date(Date.UTC(year,monthNum-1,1));
   const daysInMonth=new Date(Date.UTC(year,monthNum,0)).getUTCDate();
-  const startOffset=(first.getUTCDay()+6)%7;
-  const monthNames=["Januar","Februar","Mart","April","Maj","Juni","Juli","August","Septembar","Oktobar","Novembar","Decembar"];
+  const first=new Date(Date.UTC(year,monthNum-1,1));
+  const offset=(first.getUTCDay()+6)%7;
+  const totals={};
 
-  const byDay={};
   rows.forEach(r=>{
-    if(!byDay[r.work_date]) byDay[r.work_date]={hours:0,projects:new Set(),people:new Set()};
-    byDay[r.work_date].hours+=Number(r.hours||0);
-    if(r.project_name) byDay[r.work_date].projects.add(r.project_name);
-    if(r.person_name) byDay[r.work_date].people.add(r.person_name);
+    totals[r.work_date]=(totals[r.work_date]||0)+Number(r.hours||0);
   });
 
   let cells="";
-  for(let i=0;i<startOffset;i++){
-    cells+=`<div class="dashDay empty"></div>`;
+  for(let i=0;i<offset;i++){
+    cells+=`<div class="dashboardDay" style="visibility:hidden"></div>`;
   }
 
-  for(let day=1;day<=daysInMonth;day++){
-    const iso=`${state.month}-${String(day).padStart(2,"0")}`;
-    const d=new Date(Date.UTC(year,monthNum-1,day));
-    const weekend=d.getUTCDay()===0||d.getUTCDay()===6;
-    const info=byDay[iso];
-    const hours=info?Math.round(info.hours*100)/100:0;
-    const projects=info?Array.from(info.projects).slice(0,2).join(", "):"";
-    const people=isAdmin()&&info?Array.from(info.people).slice(0,2).join(", "):"";
-    cells+=`<div class="dashDay ${weekend?"weekend":""}" data-cal-date="${iso}">
-      <div class="dashDayNum">${day}</div>
-      ${hours?`<div class="dashHours">${hours} h</div>`:""}
-      ${projects?`<div class="dashProjects">${esc(projects)}</div>`:""}
-      ${people?`<div class="dashProjects">${esc(people)}</div>`:""}
+  for(let d=1;d<=daysInMonth;d++){
+    const iso=`${state.month}-${String(d).padStart(2,"0")}`;
+    const hrs=Math.round((totals[iso]||0)*100)/100;
+    cells+=`<div class="dashboardDay">
+      <b>${d}</b>
+      ${hrs?`<div class="dashboardHours">${hrs} h</div>`:""}
     </div>`;
   }
 
-  return `<section class="dashCalendarWrap">
-    <div class="dashCalendarHead">
-      <h2>${monthNames[monthNum-1]} ${year}</h2>
+  return `<section class="dashboardSimple">
+    <div class="head">
+      <h2>Pregled mjeseca</h2>
       <input id="month" type="month" value="${state.month}">
     </div>
-    <div class="dashWeekdays">
-      ${["Pon","Uto","Sri","Čet","Pet","Sub","Ned"].map(x=>`<div class="dashWeekday">${x}</div>`).join("")}
-    </div>
-    <div class="dashCalendarGrid">${cells}</div>
+    <div class="dashboardDays">${cells}</div>
   </section>`;
 }
 
 function entryForm(){const w=workers(),p=activeProjects(),e=state.entry;return `<div class="form"><label>Datum<input id="e_date" type="date" value="${e.work_date}"></label>${isAdmin()?`<label>Radnik<select id="e_user">${w.map(x=>`<option value="${x.id}" ${e.user_id===x.id?"selected":""}>${esc(x.full_name)}</option>`).join("")}</select></label>`:`<div class="info">Radnik: <b>${esc(state.profile?.full_name)}</b></div>`}<label>Projekat<select id="e_project">${p.map(x=>`<option value="${x.id}" ${e.project_id===x.id?"selected":""}>${esc(x.name)}${x.customer ? " · " + esc(x.customer) : ""}</option>`).join("")}</select></label><div class="grid three"><label>Od<input id="e_start" type="time" value="${e.start_time}"></label><label>Do<input id="e_end" type="time" value="${e.end_time}"></label><label>Pauza min<input id="e_break" type="number" value="${e.break_minutes}"></label></div><div class="info">Obračun: <b>${h(e.start_time,e.end_time,e.break_minutes)} h</b></div><button class="primary" id="addEntry">Sačuvaj sate</button></div>`;}
 function entriesTable(rows){if(!rows.length)return `<div class="empty">Nema unosa.</div>`;return `<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Radnik</th><th>Projekat</th><th>Klijent/Lokacija</th><th>Vrijeme</th><th>Pauza</th><th>Sati</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${e.work_date}</td><td>${esc(e.person_name)}</td><td>${esc(e.project_name)}</td><td>${esc(e.customer||"-")} · ${esc(e.location||"-")}</td><td>${e.start_time} - ${e.end_time}</td><td>${e.break_minutes} min</td><td><b>${e.hours} h</b></td><td><button data-del="${e.id}">Obriši</button></td></tr>`).join("")}</tbody></table></div>`;}
 function mainView(){const rows=filtered(),monthTotal=Math.round(rows.reduce((s,e)=>s+Number(e.hours||0),0)*100)/100,daily=state.entries.filter(e=>e.work_date===state.entry.work_date);app.innerHTML=`<main class="app"><header class="top"><div><p class="muted">Prijavljen: <b>${esc(state.profile?.full_name||state.session.user.email)}</b> · ${isAdmin()?"Admin":"Radnik"}</p><h1>${CONFIG.companyName} ${CONFIG.appName}</h1></div><nav>${["dashboard","daily","monthly"].map(k=>`<button data-tab="${k}" class="${state.tab===k?"active":""}">${k==="dashboard"?"Dashboard":k==="daily"?"Unos sati":"Mjesečno"}</button>`).join("")}${isAdmin()?`<button data-tab="projects" class="${state.tab==="projects"?"active":""}">Projekti</button><button data-tab="people" class="${state.tab==="people"?"active":""}">Radnici</button>`:""}<button id="refresh">Osvježi</button><button id="logout">Odjava</button></nav></header>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}<section class="stats">${stat(isAdmin()?"Radnika":"Moj profil",isAdmin()?workers().length:state.profile?.full_name)}${stat("Projekata",activeProjects().length)}${stat("Sati u mjesecu",monthTotal+" h")}${stat("Unosa",rows.length)}</section>${content(rows,daily)}</main>`;document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>set({tab:b.dataset.tab}));bind("refresh","click",refresh);bind("logout","click",signOut);bindDynamic();}
-function content(rows,daily){if(state.tab==="dashboard")return `${dashboardCalendar(rows)}${reportPreview(rows)}`;if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;if(state.tab==="monthly")return `<section class="panel"><div class="head"><h2>Mjesečni pregled</h2><input id="month" type="month" value="${state.month}">${isAdmin()?`<select id="workerFilter"><option value="all">Svi radnici</option>${workers().map(p=>`<option value="${p.id}" ${state.workerFilter===p.id?"selected":""}>${esc(p.full_name)}</option>`).join("")}</select>`:""}<select id="projectFilter"><option value="all">Svi projekti</option>${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}</select><input id="search" placeholder="Traži..." value="${esc(state.search)}"><button id="excel">Excel Export</button></div>${entriesTable(rows)}</section>`;if(state.tab==="projects"&&isAdmin())return `<section class="grid two"><div class="panel"><h2>Dodaj projekat</h2><input id="p_name" placeholder="Naziv projekta" value="${esc(state.project.name)}"><input id="p_customer" placeholder="Klijent" value="${esc(state.project.customer)}"><input id="p_location" placeholder="Lokacija" value="${esc(state.project.location)}"><button class="primary" id="addProject">Dodaj projekat</button></div><div class="panel"><h2>Projekti</h2>${activeProjects().map(p=>`<div class="row"><span><b>${esc(p.name)}</b><small>${esc(p.customer||"-")} · ${esc(p.location||"-")}</small></span><button data-archive-project="${p.id}">Obriši</button></div>`).join("")}</div></section>`;if(state.tab==="people"&&isAdmin())return `<section class="panel"><h2>Radnici i admini</h2><p class="muted">Radnik se kreira na login ekranu preko “Novi korisnik”. Ovdje mu mijenjaš ime, poziciju i prava.</p>${state.profiles.filter(p=>p.active!==false).map(p=>`<div class="personrow"><input data-p-name="${p.id}" value="${esc(p.full_name||"")}"><input data-p-position="${p.id}" placeholder="Pozicija" value="${esc(p.position||"")}"><select data-p-role="${p.id}" ${p.id===state.profile.id?"disabled":""}><option value="worker" ${p.role==="worker"?"selected":""}>Radnik</option><option value="admin" ${p.role==="admin"?"selected":""}>Admin</option></select><span class="muted">${esc(p.email)}</span><button data-save-profile="${p.id}">Sačuvaj</button></div>`).join("")}</section>`;return "";}
-function bindDynamic(){const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=()=>{state.month=monthEl.value;refresh();};document.querySelectorAll("[data-cal-date]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.calDate;state.month=el.dataset.calDate.slice(0,7);state.tab="daily";refresh();});const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});[["e_date","work_date"],["e_user","user_id"],["e_project","project_id"],["e_start","start_time"],["e_end","end_time"],["e_break","break_minutes"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.onchange=el.oninput=()=>{state.entry[k]=el.value;if(k==="work_date"){state.month=el.value.slice(0,7);refresh();}else render();};});[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>archiveProject(b.dataset.archiveProject));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));}
+function content(rows,daily){if(state.tab==="dashboard")return `<section class="panel"><div class="head"><h2>Pregled za mjesec</h2><input id="month" type="month" value="${state.month}"></div><div class="grid two">${summary("Sati po projektu",group(rows,"project_name"))}${isAdmin()?summary("Sati po radniku",group(rows,"person_name")):""}</div></section>`;if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;if(state.tab==="monthly")return `<section class="panel"><div class="head"><h2>Mjesečni pregled</h2><input id="month" type="month" value="${state.month}">${isAdmin()?`<select id="workerFilter"><option value="all">Svi radnici</option>${workers().map(p=>`<option value="${p.id}" ${state.workerFilter===p.id?"selected":""}>${esc(p.full_name)}</option>`).join("")}</select>`:""}<select id="projectFilter"><option value="all">Svi projekti</option>${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}</select><input id="search" placeholder="Traži..." value="${esc(state.search)}"><button id="excel">Excel Export</button></div>${entriesTable(rows)}</section>`;if(state.tab==="projects"&&isAdmin())return `<section class="grid two"><div class="panel"><h2>Dodaj projekat</h2><input id="p_name" placeholder="Naziv projekta" value="${esc(state.project.name)}"><input id="p_customer" placeholder="Klijent" value="${esc(state.project.customer)}"><input id="p_location" placeholder="Lokacija" value="${esc(state.project.location)}"><button class="primary" id="addProject">Dodaj projekat</button></div><div class="panel"><h2>Projekti</h2>${activeProjects().map(p=>`<div class="row"><span><b>${esc(p.name)}</b><small>${esc(p.customer||"-")} · ${esc(p.location||"-")}</small></span><button data-archive-project="${p.id}">Obriši</button></div>`).join("")}</div></section>`;if(state.tab==="people"&&isAdmin())return `<section class="panel"><h2>Radnici i admini</h2><p class="muted">Radnik se kreira na login ekranu preko “Novi korisnik”. Ovdje mu mijenjaš ime, poziciju i prava.</p>${state.profiles.filter(p=>p.active!==false).map(p=>`<div class="personrow"><input data-p-name="${p.id}" value="${esc(p.full_name||"")}"><input data-p-position="${p.id}" placeholder="Pozicija" value="${esc(p.position||"")}"><select data-p-role="${p.id}" ${p.id===state.profile.id?"disabled":""}><option value="worker" ${p.role==="worker"?"selected":""}>Radnik</option><option value="admin" ${p.role==="admin"?"selected":""}>Admin</option></select><span class="muted">${esc(p.email)}</span><button data-save-profile="${p.id}">Sačuvaj</button></div>`).join("")}</section>`;return "";}
+function bindDynamic(){const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=()=>{state.month=monthEl.value;refresh();};const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});[["e_date","work_date"],["e_user","user_id"],["e_project","project_id"],["e_start","start_time"],["e_end","end_time"],["e_break","break_minutes"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.onchange=el.oninput=()=>{state.entry[k]=el.value;if(k==="work_date"){state.month=el.value.slice(0,7);refresh();}else render();};});[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>archiveProject(b.dataset.archiveProject));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));}
 function bind(id,event,fn){const el=document.getElementById(id);if(el)el.addEventListener(event,fn);}
 function bindInput(id,key){const el=document.getElementById(id);if(el)el.oninput=()=>state[key]=el.value;}
 function render(){if(!state.session?.user||state.authMode==="reset")loginView();else if(state.loading)app.innerHTML='<div class="login"><div class="card">Učitavanje...</div></div>';else mainView();}
