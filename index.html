@@ -1,3 +1,4 @@
+<!-- MONTHLY_ADMIN_FILTER_CALENDAR -->
 <!-- LIVE_HOURS_CALC_FIX -->
 <!-- RESET_PASSWORD_FINAL_FLOW -->
 <!-- PROJECT_FORCE_EMPTY_SELECT -->
@@ -68,6 +69,30 @@ nav{display:flex;gap:8px;flex-wrap:wrap}.muted{color:#64748b;font-size:14px;marg
 .stkPositive{color:#166534;font-weight:800}
 .stkNegative{color:#991b1b;font-weight:800}
 @media(max-width:900px){.stkSummary{grid-template-columns:1fr 1fr}.stkBox b{font-size:20px}}
+
+
+/* MONTHLY ADMIN CALENDAR */
+.monthFilterCal{background:white;border:1px solid #e2e8f0;border-radius:24px;padding:18px;margin-bottom:16px}
+.monthFilterCalHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.monthFilterCalHead h3{margin:0;font-size:24px}
+.monthFilterWeek,.monthFilterGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.monthFilterWeek div{text-align:center;color:#64748b;font-weight:700;padding:8px 0}
+.monthFilterDay{min-height:92px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:8px}
+.monthFilterDay.empty{visibility:hidden}
+.monthFilterDay.weekend{background:#f1f5f9}
+.monthFilterNum{font-size:20px;font-weight:800}
+.monthFilterHours{margin-top:8px;display:inline-block;background:#fecaca;color:#7f1d1d;border-radius:8px;padding:4px 7px;font-size:13px;font-weight:700}
+.monthFilterDay.weekend .monthFilterHours{background:#bbf7d0;color:#14532d}
+.monthFilterSmall{font-size:11px;color:#64748b;margin-top:6px;line-height:1.2}
+@media(max-width:700px){
+.monthFilterCal{padding:10px;border-radius:18px;margin-left:-8px;margin-right:-8px}
+.monthFilterCalHead h3{font-size:20px}
+.monthFilterWeek,.monthFilterGrid{gap:4px}
+.monthFilterWeek div{font-size:11px;padding:5px 0}
+.monthFilterDay{min-height:62px;border-radius:10px;padding:5px}
+.monthFilterNum{font-size:14px}.monthFilterHours{font-size:10px;padding:2px 5px}
+.monthFilterSmall{display:none}
+}
 
 </style>
 </head>
@@ -558,6 +583,50 @@ function calendarDashboard(rows){
   </section>`;
 }
 
+
+function monthlyFilterCalendar(rows){
+  const [year,monthNum]=state.month.split("-").map(Number);
+  const monthNames=["Januar","Februar","Mart","April","Maj","Juni","Juli","August","Septembar","Oktobar","Novembar","Decembar"];
+  const first=new Date(Date.UTC(year,monthNum-1,1));
+  const days=new Date(Date.UTC(year,monthNum,0)).getUTCDate();
+  const offset=(first.getUTCDay()+6)%7;
+
+  const totals={};
+  const details={};
+  rows.forEach(r=>{
+    totals[r.work_date]=(totals[r.work_date]||0)+Number(r.hours||0);
+    if(!details[r.work_date]) details[r.work_date]=new Set();
+    if(isAdmin() && state.workerFilter==="all" && r.person_name) details[r.work_date].add(r.person_name);
+    if(state.projectFilter==="all" && r.project_name) details[r.work_date].add(r.project_name);
+  });
+
+  let cells="";
+  for(let i=0;i<offset;i++) cells+=`<div class="monthFilterDay empty"></div>`;
+
+  for(let d=1;d<=days;d++){
+    const iso=`${state.month}-${String(d).padStart(2,"0")}`;
+    const date=new Date(Date.UTC(year,monthNum-1,d));
+    const weekend=date.getUTCDay()===0||date.getUTCDay()===6;
+    const hrs=Math.round((totals[iso]||0)*100)/100;
+    const small=details[iso]?Array.from(details[iso]).slice(0,2).join(", "):"";
+    cells+=`<div class="monthFilterDay ${weekend?"weekend":""}">
+      <div class="monthFilterNum">${d}</div>
+      ${hrs?`<div class="monthFilterHours">${hrs} h</div>`:""}
+      ${small?`<div class="monthFilterSmall">${esc(small)}</div>`:""}
+    </div>`;
+  }
+
+  const total=Math.round(rows.reduce((s,r)=>s+Number(r.hours||0),0)*100)/100;
+  return `<section class="monthFilterCal">
+    <div class="monthFilterCalHead">
+      <h3>${monthNames[monthNum-1]} ${year}</h3>
+      <b>${total} h</b>
+    </div>
+    <div class="monthFilterWeek">${["Pon","Uto","Sri","Čet","Pet","Sub","Ned"].map(x=>`<div>${x}</div>`).join("")}</div>
+    <div class="monthFilterGrid">${cells}</div>
+  </section>`;
+}
+
 function entryForm(){
  const w=workers(),p=activeProjects(),e=state.entry;
  return `<div class="form">
@@ -578,7 +647,7 @@ ${p.map(x=>`<option value="${x.id}">${esc(x.name)}${x.customer ? " · " + esc(x.
 
 function entriesTable(rows){if(!rows.length)return `<div class="empty">Nema unosa.</div>`;return `<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Radnik</th><th>Projekat</th><th>Klijent/Lokacija</th><th>Vrijeme</th><th>Pauza</th><th>Sati</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${e.work_date}</td><td>${esc(e.person_name)}</td><td>${esc(e.project_name)}</td><td>${esc(e.customer||"-")} · ${esc(e.location||"-")}</td><td>${e.start_time} - ${e.end_time}</td><td>${e.break_minutes} min</td><td><b>${e.hours} h</b></td><td><button data-del="${e.id}">Obriši</button></td></tr>`).join("")}</tbody></table></div>`;}
 function mainView(){const rows=filtered(),monthTotal=Math.round(rows.reduce((s,e)=>s+Number(e.hours||0),0)*100)/100,daily=state.entries.filter(e=>e.work_date===state.entry.work_date);app.innerHTML=`<main class="app"><header class="top"><div><p class="muted">Prijavljen: <b>${esc(state.profile?.full_name||state.session.user.email)}</b> · ${isAdmin()?"Admin":"Radnik"}</p><h1>${CONFIG.companyName} ${CONFIG.appName}</h1></div><nav>${["dashboard","daily","monthly"].map(k=>`<button data-tab="${k}" class="${state.tab===k?"active":""}">${k==="dashboard"?"Dashboard":k==="daily"?"Unos sati":"Mjesečno"}</button>`).join("")}${isAdmin()?`<button data-tab="projects" class="${state.tab==="projects"?"active":""}">Projekti</button><button data-tab="people" class="${state.tab==="people"?"active":""}">Radnici</button><button data-tab="stundenkonto" class="${state.tab==="stundenkonto"?"active":""}">Stundenkonto</button>`:""}<button id="refresh">Osvježi</button><button id="logout">Odjava</button></nav></header>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}<section class="stats">${stat(isAdmin()?"Radnika":"Moj profil",isAdmin()?workers().length:state.profile?.full_name)}${stat("Projekata",activeProjects().length)}${stat("Sati u mjesecu",monthTotal+" h")}${stat("Unosa",rows.length)}</section>${content(rows,daily)}</main>`;document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>set({tab:b.dataset.tab}));bind("refresh","click",refresh);bind("logout","click",signOut);bindDynamic();}
-function content(rows,daily){if(state.tab==="dashboard")return isAdmin()?`<section class="panel"><div class="head"><h2>Pregled za mjesec</h2><input id="month" type="month" value="${state.month}"></div><div class="grid two">${summary("Sati po projektu",group(rows,"project_name"))}${summary("Sati po radniku",group(rows,"person_name"))}</div></section>`:`${calendarDashboard(rows)}`;if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;if(state.tab==="monthly")return `<section class="panel"><div class="head"><h2>Mjesečni pregled</h2><input id="month" type="month" value="${state.month}">${isAdmin()?`<select id="workerFilter"><option value="all">Svi radnici</option>${workers().map(p=>`<option value="${p.id}" ${state.workerFilter===p.id?"selected":""}>${esc(p.full_name)}</option>`).join("")}</select>`:""}<select id="projectFilter"><option value="all">Svi projekti</option>${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}</select><input id="search" placeholder="Traži..." value="${esc(state.search)}"><button id="excel">Excel Export</button></div>${entriesTable(rows)}</section>`;if(state.tab==="projects"&&isAdmin())return `<section class="grid two"><div class="panel"><h2>Dodaj projekat</h2><input id="p_name" placeholder="Naziv projekta" value="${esc(state.project.name)}"><input id="p_customer" placeholder="Klijent" value="${esc(state.project.customer)}"><input id="p_location" placeholder="Lokacija" value="${esc(state.project.location)}"><button class="primary" id="addProject">Dodaj projekat</button></div><div class="panel"><h2>Projekti</h2>${activeProjects().map(p=>`<div class="row"><span><b>${esc(p.name)}</b><small>${esc(p.customer||"-")} · ${esc(p.location||"-")}</small></span><button data-archive-project="${p.id}">Obriši</button></div>`).join("")}</div></section>`;if(state.tab==="people"&&isAdmin())return `<section class="panel"><h2>Radnici i admini</h2><p class="muted">Radnik se kreira na login ekranu preko “Novi korisnik”. Ovdje mu mijenjaš ime, poziciju i prava.</p>${state.profiles.filter(p=>p.active!==false).map(p=>`<div class="personrow"><input data-p-name="${p.id}" value="${esc(p.full_name||"")}"><input data-p-position="${p.id}" placeholder="Pozicija" value="${esc(p.position||"")}"><select data-p-role="${p.id}" ${p.id===state.profile.id?"disabled":""}><option value="worker" ${p.role==="worker"?"selected":""}>Radnik</option><option value="admin" ${p.role==="admin"?"selected":""}>Admin</option></select><span class="muted">${esc(p.email)}</span><button data-save-profile="${p.id}">Sačuvaj</button></div>`).join("")}</section>`;if(state.tab==="stundenkonto"&&isAdmin())return stundenkontoView();return "";}
+function content(rows,daily){if(state.tab==="dashboard")return isAdmin()?`<section class="panel"><div class="head"><h2>Pregled za mjesec</h2><input id="month" type="month" value="${state.month}"></div><div class="grid two">${summary("Sati po projektu",group(rows,"project_name"))}${summary("Sati po radniku",group(rows,"person_name"))}</div></section>`:`${calendarDashboard(rows)}`;if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;if(state.tab==="monthly")return `<section class="panel"><div class="head"><h2>Mjesečni pregled</h2><input id="month" type="month" value="${state.month}">${isAdmin()?`<select id="workerFilter"><option value="all">Svi radnici</option>${workers().map(p=>`<option value="${p.id}" ${state.workerFilter===p.id?"selected":""}>${esc(p.full_name)}</option>`).join("")}</select>`:""}<select id="projectFilter"><option value="all">Svi projekti</option>${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}</select><input id="search" placeholder="Traži..." value="${esc(state.search)}"><button id="excel">Excel Export</button></div>${monthlyFilterCalendar(rows)}${entriesTable(rows)}</section>`;if(state.tab==="projects"&&isAdmin())return `<section class="grid two"><div class="panel"><h2>Dodaj projekat</h2><input id="p_name" placeholder="Naziv projekta" value="${esc(state.project.name)}"><input id="p_customer" placeholder="Klijent" value="${esc(state.project.customer)}"><input id="p_location" placeholder="Lokacija" value="${esc(state.project.location)}"><button class="primary" id="addProject">Dodaj projekat</button></div><div class="panel"><h2>Projekti</h2>${activeProjects().map(p=>`<div class="row"><span><b>${esc(p.name)}</b><small>${esc(p.customer||"-")} · ${esc(p.location||"-")}</small></span><button data-archive-project="${p.id}">Obriši</button></div>`).join("")}</div></section>`;if(state.tab==="people"&&isAdmin())return `<section class="panel"><h2>Radnici i admini</h2><p class="muted">Radnik se kreira na login ekranu preko “Novi korisnik”. Ovdje mu mijenjaš ime, poziciju i prava.</p>${state.profiles.filter(p=>p.active!==false).map(p=>`<div class="personrow"><input data-p-name="${p.id}" value="${esc(p.full_name||"")}"><input data-p-position="${p.id}" placeholder="Pozicija" value="${esc(p.position||"")}"><select data-p-role="${p.id}" ${p.id===state.profile.id?"disabled":""}><option value="worker" ${p.role==="worker"?"selected":""}>Radnik</option><option value="admin" ${p.role==="admin"?"selected":""}>Admin</option></select><span class="muted">${esc(p.email)}</span><button data-save-profile="${p.id}">Sačuvaj</button></div>`).join("")}</section>`;if(state.tab==="stundenkonto"&&isAdmin())return stundenkontoView();return "";}
 function bindDynamic(){
 ["e_start","e_end","e_break"].forEach(id=>{
   const el=document.getElementById(id);
