@@ -1,3 +1,4 @@
+<!-- RESET_PASSWORD_FINAL_FLOW -->
 <!-- PROJECT_FORCE_EMPTY_SELECT -->
 <!-- PROJECT_REQUIRED_HARD_FIX -->
 <!-- STUNDENKONTO_SUPABASE_SAFE -->
@@ -312,16 +313,48 @@ async function refresh(){
 }
 
 async function signIn(){const {error}=await supabase.auth.signInWithPassword({email:state.authEmail,password:state.authPassword});if(error)set({message:error.message});}
+function appRedirectUrl(){
+  return "https://stundenkonto-bsv.de";
+}
 async function signUp(){
   if(!state.authEmail||!state.authPassword||!state.authPassword2){set({message:"Unesi email i lozinku dva puta."});return;}
   if(state.authPassword!==state.authPassword2){set({message:"Lozinke nisu iste."});return;}
   if(state.authPassword.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}
-  const cleanUrl=window.location.href.split("#")[0].split("?")[0];
-  const {error}=await supabase.auth.signUp({email:state.authEmail,password:state.authPassword,options:{data:{full_name:state.authName||state.authEmail},emailRedirectTo:cleanUrl}});
-  if(error)set({message:error.message});else set({message:"Registracija je poslana. Provjeri email i klikni potvrdu prije prijave.",authMode:"login",authPassword:"",authPassword2:""});
+  const {error}=await supabase.auth.signUp({
+    email:state.authEmail,
+    password:state.authPassword,
+    options:{
+      data:{full_name:state.authName||state.authEmail},
+      emailRedirectTo:appRedirectUrl()
+    }
+  });
+  if(error)set({message:error.message});
+  else set({message:"Korisnik je kreiran. Može se odmah prijaviti.",authMode:"login",authPassword:"",authPassword2:""});
 }
-async function sendResetEmail(){if(!state.authEmail){set({message:"Unesi email za reset lozinke."});return;}const cleanUrl=window.location.href.split("#")[0].split("?")[0];const {error}=await supabase.auth.resetPasswordForEmail(state.authEmail,{redirectTo:cleanUrl});if(error)set({message:error.message});else set({message:"Poslali smo email za promjenu lozinke. Otvori email i klikni link."});}
-async function updatePassword(){if(!state.resetPassword1||!state.resetPassword2){set({message:"Unesi novu lozinku dva puta."});return;}if(state.resetPassword1!==state.resetPassword2){set({message:"Nove lozinke nisu iste."});return;}if(state.resetPassword1.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}const {error}=await supabase.auth.updateUser({password:state.resetPassword1});if(error)set({message:error.message});else set({message:"Lozinka je promijenjena. Možeš se prijaviti.",authMode:"login",resetPassword1:"",resetPassword2:""});}
+async function sendResetEmail(){
+  if(!state.authEmail){set({message:"Unesi email adresu za promjenu lozinke."});return;}
+  const {error}=await supabase.auth.resetPasswordForEmail(state.authEmail,{redirectTo:appRedirectUrl()});
+  if(error)set({message:error.message});
+  else set({message:"Poslali smo link za promjenu lozinke na vašu e-mail adresu. Otvorite e-mail i kliknite link."});
+}
+async function updatePassword(){
+  if(!state.resetPassword1||!state.resetPassword2){set({message:"Unesi novu lozinku dva puta."});return;}
+  if(state.resetPassword1!==state.resetPassword2){set({message:"Nove lozinke nisu iste."});return;}
+  if(state.resetPassword1.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}
+  const {error}=await supabase.auth.updateUser({password:state.resetPassword1});
+  if(error)set({message:error.message});
+  else{
+    await supabase.auth.signOut();
+    set({
+      session:null,
+      authMode:"login",
+      resetPassword1:"",
+      resetPassword2:"",
+      authPassword:"",
+      message:"Lozinka je uspješno promijenjena. Prijavite se novom lozinkom."
+    });
+  }
+}
 async function signOut(){await supabase.auth.signOut();set({session:null,profile:null,tab:"daily"});}
 async function addProject(){if(!isAdmin()||!state.project.name.trim())return;const {error}=await supabase.from("projects").insert(state.project);if(error)set({message:error.message});else{state.project={name:"",customer:"",location:""};refresh();}}
 async function archiveProject(id){const {error}=await supabase.from("projects").update({active:false}).eq("id",id);if(error)set({message:error.message});else refresh();}
@@ -474,7 +507,7 @@ function loginView(){
  app.innerHTML=`<main class="login"><section class="card">
  <div class="logo">BSV</div><h1>${CONFIG.companyName} ${CONFIG.appName}</h1><p class="muted">Online evidencija sati za radnike i projekte.</p>
  <div class="switch"><button id="modeLogin" class="${state.authMode==="login"?"active":""}">Prijava</button><button id="modeSignup" class="${state.authMode==="signup"?"active":""}">Novi korisnik</button></div>
- ${isReset?`<div class="info">Unesi novu lozinku dva puta. Ovo radi nakon što klikneš link iz emaila za reset lozinke.</div><input id="resetPassword1" placeholder="Nova lozinka" type="password" value="${esc(state.resetPassword1)}"><input id="resetPassword2" placeholder="Ponovi novu lozinku" type="password" value="${esc(state.resetPassword2)}">`:`${state.authMode==="signup"?`<input id="authName" placeholder="Ime i prezime" value="${esc(state.authName)}">`:""}<input id="authEmail" placeholder="Email" value="${esc(state.authEmail)}"><input id="authPassword" placeholder="Lozinka" type="password" value="${esc(state.authPassword)}">${state.authMode==="signup"?`<input id="authPassword2" placeholder="Ponovi lozinku" type="password" value="${esc(state.authPassword2)}">`:""}`}
+ ${isReset?`<div class="info">Unesite novu lozinku dva puta. Ova forma se automatski otvara nakon klika na link iz e-maila.</div><input id="resetPassword1" placeholder="Nova lozinka" type="password" value="${esc(state.resetPassword1)}"><input id="resetPassword2" placeholder="Ponovi novu lozinku" type="password" value="${esc(state.resetPassword2)}">`:`${state.authMode==="signup"?`<input id="authName" placeholder="Ime i prezime" value="${esc(state.authName)}">`:""}<input id="authEmail" placeholder="Email" value="${esc(state.authEmail)}"><input id="authPassword" placeholder="Lozinka" type="password" value="${esc(state.authPassword)}">${state.authMode==="signup"?`<input id="authPassword2" placeholder="Ponovi lozinku" type="password" value="${esc(state.authPassword2)}">`:""}`}
  ${state.message?`<div class="msg">${esc(state.message)}</div>`:""}
  ${isReset?`<button class="primary" id="updatePassword">Promijeni lozinku</button>`:`<button class="primary" id="authBtn">${state.authMode==="login"?"Prijavi se":"Kreiraj korisnika"}</button>`}
  ${state.authMode==="login"?`<button class="linkbtn" id="forgotBtn">Zaboravljena lozinka?</button>`:""}
@@ -565,9 +598,28 @@ document.querySelectorAll("[data-paid]").forEach(el=>{
 }
 function bind(id,event,fn){const el=document.getElementById(id);if(el)el.addEventListener(event,fn);}
 function bindInput(id,key){const el=document.getElementById(id);if(el)el.oninput=()=>state[key]=el.value;}
+
+function detectPasswordRecoveryFromUrl(){
+  const txt=(window.location.hash||"")+" "+(window.location.search||"");
+  if(txt.includes("type=recovery") || txt.includes("access_token")){
+    state.authMode="reset";
+    state.message="Unesite novu lozinku.";
+  }
+}
+
 function render(){if(!state.session?.user||state.authMode==="reset")loginView();else if(state.loading)app.innerHTML='<div class="login"><div class="card">Učitavanje...</div></div>';else mainView();}
-supabase.auth.getSession().then(({data})=>{state.session=data.session;render();refresh();});
-supabase.auth.onAuthStateChange((event,session)=>{state.session=session;if(event==="PASSWORD_RECOVERY")state.authMode="reset";render();if(session&&state.authMode!=="reset")refresh();});
+supabase.auth.getSession().then(({data})=>{state.session=data.session;detectPasswordRecoveryFromUrl();render();if(state.authMode!=="reset")refresh();});
+supabase.auth.onAuthStateChange((event,session)=>{
+  state.session=session;
+  if(event==="PASSWORD_RECOVERY"){
+    state.authMode="reset";
+    state.message="Unesite novu lozinku.";
+    render();
+    return;
+  }
+  render();
+  if(session&&state.authMode!=="reset")refresh();
+});
 if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
 </script>
 
