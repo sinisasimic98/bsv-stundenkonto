@@ -1,3 +1,4 @@
+<!-- ADMIN_DASHBOARD_SUMMARY_CALENDAR -->
 <!-- DASHBOARD_CLICK_FIX -->
 <!-- CLEAN_DASHBOARD_CALENDAR_FINAL -->
 <!-- STUNDENKONTO_SUPABASE_SAFE -->
@@ -544,6 +545,19 @@ function calendarDashboard(rows){
 }
 
 
+
+function adminDashboardSummary(rows){
+  return `<section class="panel">
+    <div class="head">
+      <h2>Pregled za mjesec</h2>
+    </div>
+    <div class="grid two">
+      ${summary("Sati po projektu",group(rows,"project_name"))}
+      ${summary("Sati po radniku",group(rows,"person_name"))}
+    </div>
+  </section>`;
+}
+
 function cleanDashboardCalendar(rows){
   const visibleRows = isAdmin()
     ? rows
@@ -622,7 +636,7 @@ function safeContent(rows,daily){
 }
 
 function content(rows,daily){
-  if(state.tab==="dashboard")return `${cleanDashboardCalendar(rows)}`;
+  if(state.tab==="dashboard")return isAdmin()?`${adminDashboardSummary(rows)}${cleanDashboardCalendar(rows)}`:`${cleanDashboardCalendar(rows)}`;
 
   if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;
 
