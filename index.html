@@ -1,3 +1,4 @@
+<!-- ADMIN_DASHBOARD_NAMES_NAN_FIX -->
 <!-- EDIT_PROJECTS_ADMIN -->
 <!-- ADMIN_DASHBOARD_ALPHA_SORT -->
 <!-- ADMIN_DASHBOARD_SUMMARY_CALENDAR -->
@@ -583,6 +584,37 @@ function adminDashboardSummary(rows){
   </section>`;
 }
 
+
+function makeDashboardGroup(rows,key){
+  const out={};
+  (rows||[]).forEach(r=>{
+    const name=(r && r[key]) ? String(r[key]) : "-";
+    const val=Number(r && r.hours);
+    out[name]=(out[name]||0)+(Number.isFinite(val)?val:0);
+  });
+  return out;
+}
+function summaryAlphaFixed(title,obj){
+  const arr=Object.entries(obj||{}).sort((a,b)=>String(a[0]||"").localeCompare(String(b[0]||""),"bs",{sensitivity:"base"}));
+  if(!arr.length)return `<div><h3>${title}</h3><p class="muted">Nema podataka.</p></div>`;
+  return `<div><h3>${title}</h3>${arr.map(([k,v])=>{
+    const n=Number(v);
+    const hrs=Number.isFinite(n)?Math.round(n*100)/100:0;
+    return `<div class="row"><span>${esc(k||"-")}</span><b>${hrs} h</b></div>`;
+  }).join("")}</div>`;
+}
+function adminDashboardSummaryFixed(rows){
+  return `<section class="panel">
+    <div class="head">
+      <h2>Pregled za mjesec</h2>
+    </div>
+    <div class="grid two">
+      ${summaryAlphaFixed("Sati po projektu",makeDashboardGroup(rows,"project_name"))}
+      ${summaryAlphaFixed("Sati po radniku",makeDashboardGroup(rows,"person_name"))}
+    </div>
+  </section>`;
+}
+
 function cleanDashboardCalendar(rows){
   const visibleRows = isAdmin()
     ? rows
@@ -661,7 +693,7 @@ function safeContent(rows,daily){
 }
 
 function content(rows,daily){
-  if(state.tab==="dashboard")return isAdmin()?`${adminDashboardSummary(rows)}${cleanDashboardCalendar(rows)}`:`${cleanDashboardCalendar(rows)}`;
+  if(state.tab==="dashboard")return isAdmin()?`${adminDashboardSummaryFixed(rows)}${cleanDashboardCalendar(rows)}`:`${cleanDashboardCalendar(rows)}`;
 
   if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;
 
