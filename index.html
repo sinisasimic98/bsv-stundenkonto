@@ -1,3 +1,4 @@
+<!-- ADMIN_HOURS_DEEP_FIX_MLADEN_NIKOLA -->
 <!-- ADMIN_WORKER_HOURS_FIX -->
 <!-- PROJECT_REQUIRED_AGAIN_FINAL -->
 <!-- ADMIN_DASHBOARD_NAMES_NAN_FIX -->
@@ -138,7 +139,7 @@ let state = {
 
 function h(start,end,br){if(!start||!end)return 0;const [sh,sm]=start.split(":").map(Number),[eh,em]=end.split(":").map(Number);return Math.round(Math.max(0,eh*60+em-(sh*60+sm)-Number(br||0))/60*100)/100;}
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
-function set(p){state={...state,...p};render();}
+function set(p){state={...state,...p};state.entries=normalizeEntryRows(state.entries);render();}
 function isAdmin(){return state.profile?.role==="admin";}
 function workers(){return state.profiles.filter(p=>p.active!==false&&p.role==="worker");}
 function activeProjects(){return state.projects.filter(p=>p.active!==false);}
@@ -146,8 +147,10 @@ function group(rows,key){const m={};rows.forEach(r=>m[r[key]||"Nepoznato"]=(m[r[
 
 function filtered(){
   const q=(state.search||"").toLowerCase();
-  return normalizeEntryRows(state.entries).filter(e=>{
-    if(!String(e.work_date||"").startsWith(state.month))return false;
+  const rows=normalizeEntryRows(state.entries);
+  return rows.filter(e=>{
+    const d=normalizeDateValue(e.work_date);
+    if(!d.startsWith(state.month))return false;
     if(isAdmin() && state.workerFilter!=="all" && String(e.user_id)!==String(state.workerFilter))return false;
     if(state.projectFilter!=="all" && String(e.project_id)!==String(state.projectFilter))return false;
     if(q && !(`${e.person_name||""} ${e.project_name||""} ${e.customer||""}`).toLowerCase().includes(q))return false;
@@ -598,27 +601,50 @@ function adminDashboardSummary(rows){
 
 
 
+
+function normalizeDateValue(v){
+  if(!v)return "";
+  const s=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+  const m=s.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})/);
+  if(m)return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+  return s;
+}
+function personNameById(id){
+  const p=(state.profiles||[]).find(x=>String(x.id)===String(id));
+  return p ? (p.full_name||p.email||"-") : "-";
+}
+function projectNameById(id){
+  const p=(state.projects||[]).find(x=>String(x.id)===String(id));
+  return p ? (p.name||"-") : "-";
+}
+function customerByProjectId(id){
+  const p=(state.projects||[]).find(x=>String(x.id)===String(id));
+  return p ? (p.customer||"") : "";
+}
+
 function normalizeEntryRows(rows){
   return (rows||[]).map(r=>{
     const personObj = r.profiles || r.profile || r.person || r.user || {};
     const projectObj = r.projects || r.project || {};
+    const userId = r.user_id || r.profile_id || r.worker_id || personObj.id || "";
+    const projectId = r.project_id || projectObj.id || "";
     const start = r.start_time || r.start || "";
     const end = r.end_time || r.end || "";
     const br = r.break_minutes ?? r.break ?? 0;
     let hrs = Number(r.hours);
-    if(!Number.isFinite(hrs)){
-      hrs = Number(h(start,end,br));
-    }
+    if(!Number.isFinite(hrs)) hrs = Number(h(start,end,br));
     if(!Number.isFinite(hrs)) hrs = 0;
+    const workDate = normalizeDateValue(r.work_date || r.date || r.created_at || "");
     return {
       ...r,
       hours: hrs,
-      user_id: r.user_id || r.profile_id || r.worker_id || personObj.id || "",
-      project_id: r.project_id || projectObj.id || "",
-      person_name: r.person_name || r.full_name || personObj.full_name || personObj.name || r.email || personObj.email || "-",
-      project_name: r.project_name || projectObj.name || r.project_name || r.project || "-",
-      customer: r.customer || projectObj.customer || "",
-      work_date: r.work_date || r.date || ""
+      user_id: userId,
+      project_id: projectId,
+      person_name: r.person_name || r.full_name || personObj.full_name || personObj.name || personNameById(userId) || r.email || personObj.email || "-",
+      project_name: r.project_name || projectObj.name || projectNameById(projectId) || "-",
+      customer: r.customer || projectObj.customer || customerByProjectId(projectId) || "",
+      work_date: workDate
     };
   });
 }
@@ -656,11 +682,7 @@ function adminDashboardSummaryFixed(rows){
 
 function cleanDashboardCalendar(rows){
   rows=normalizeEntryRows(rows);
-  const visibleRows = isAdmin()
-    ? rows
-        .filter(e=>state.workerFilter==="all" || String(e.user_id)===String(state.workerFilter))
-        .filter(e=>state.projectFilter==="all" || String(e.project_id)===String(state.projectFilter))
-    : rows;
+  const visibleRows = isAdmin() ? filtered() : rows;
 
   const [year,monthNum]=state.month.split("-").map(Number);
   const monthNames=["Januar","Februar","Mart","April","Maj","Juni","Juli","August","Septembar","Oktobar","Novembar","Decembar"];
@@ -733,7 +755,7 @@ function safeContent(rows,daily){
 }
 
 function content(rows,daily){
-  if(state.tab==="dashboard")return isAdmin()?`${adminDashboardSummaryFixed(rows)}${cleanDashboardCalendar(rows)}`:`${cleanDashboardCalendar(rows)}`;
+  if(state.tab==="dashboard")return isAdmin()?`${adminDashboardSummaryFixed(filtered())}${cleanDashboardCalendar(rows)}`:`${cleanDashboardCalendar(rows)}`;
 
   if(state.tab==="daily")return `<section class="grid two"><div class="panel"><h2>Novi unos sati</h2>${entryForm()}</div><div class="panel"><h2>Unosi za izabrani datum</h2>${entriesTable(daily)}</div></section>`;
 
@@ -794,3 +816,4 @@ if (window.caches) {
 
 </body>
 </html>
+<!-- ADMIN_DEEP_RENORMALIZE_DONE -->
