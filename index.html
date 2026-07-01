@@ -1,5 +1,4 @@
-<!-- LIMIT_2500_ONLY_FIX -->
-<!-- FULL_MONTH_ADMIN_1_2_3_FIX -->
+<!-- TIME_ENTRIES_VIEW_LIMIT_2500_FINAL -->
 <!-- ADMIN_HOURS_DEEP_FIX_MLADEN_NIKOLA -->
 <!-- ADMIN_WORKER_HOURS_FIX -->
 <!-- PROJECT_REQUIRED_AGAIN_FINAL -->
@@ -141,28 +140,11 @@ let state = {
 
 function h(start,end,br){if(!start||!end)return 0;const [sh,sm]=start.split(":").map(Number),[eh,em]=end.split(":").map(Number);return Math.round(Math.max(0,eh*60+em-(sh*60+sm)-Number(br||0))/60*100)/100;}
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
-function set(p){state={...state,...p};await loadFullMonthEntriesFallback();state.entries=normalizeEntryRows(state.entries);render();}
+function set(p){state={...state,...p};state.entries=normalizeEntryRows(state.entries);render();}
 function isAdmin(){return state.profile?.role==="admin";}
 function workers(){return state.profiles.filter(p=>p.active!==false&&p.role==="worker");}
 function activeProjects(){return state.projects.filter(p=>p.active!==false);}
 function group(rows,key){const m={};rows.forEach(r=>m[r[key]||"Nepoznato"]=(m[r[key]||"Nepoznato"]||0)+Number(r.hours||0));return Object.entries(m).map(([name,hours])=>({name,hours:Math.round(hours*100)/100})).sort((a,b)=>b.hours-a.hours);}
-
-
-async function loadFullMonthEntriesFallback(){
-  if(!state.session)return;
-  try{
-    const {data,error}=await supabase.from("entries")
-      .select("*,profiles(id,full_name,email).limit(2500),projects(id,name,customer)")
-      .gte("work_date",monthStart())
-      .lt("work_date",monthEndExclusive())
-      .order("work_date",{ascending:true});
-    if(!error && data){
-      state.entries=normalizeEntryRows(data);
-    }
-  }catch(err){
-    console.warn("full month fallback failed",err);
-  }
-}
 
 function filtered(){
   const q=(state.search||"").toLowerCase();
@@ -364,7 +346,7 @@ async function refresh(){
   const [pr,pj,en]=await Promise.all([
     supabase.from("profiles").select("*").order("full_name"),
     supabase.from("projects").select("*").order("name"),
-    supabase.from("time_entries_view").select("*").gte("work_date",monthStart()).lt("work_date",monthEndExclusive())).order("work_date",{ascending:false})
+    supabase.from("time_entries_view").select("*").gte("work_date",`${state.month}-01`).lt("work_date",nextMonthStart(state.month)).order("work_date",{ascending:false}).limit(2500)
   ]);
   state.profiles=pr.data||[];state.projects=pj.data||[];state.entries=en.data||[];if(isAdmin()) await loadStundenkontoBalances();
   const w=workers(),p=activeProjects();
@@ -457,7 +439,7 @@ function stundenkontoRows(){
 }
 async function loadStundenkontoBalances(){
   if(!isAdmin()) return;
-  const {data,error}=await supabase.from("stundenkonto_balances").select("*").gte("work_date",monthStart()).lt("work_date",monthEndExclusive());
+  const {data,error}=await supabase.from("stundenkonto_balances").select("*").eq("month",state.month);
   if(error){
     state.stkBalances={};
     state.message="Pokreni SQL fajl stundenkonto_balances.sql u Supabase za Stundenkonto.";
@@ -611,7 +593,6 @@ function adminDashboardSummary(rows){
     <div class="head">
       <h2>Pregled za mjesec</h2>
     </div>
-    <p class="muted">Učitano: ${monthStart()} do ${monthEndInclusive()} · ${normalizeEntryRows(state.entries).filter(e=>String(e.work_date||"").startsWith(state.month)).length} unosa</p>
     <div class="grid two">
       ${summaryAlpha("Sati po projektu",group(rows,"project_name"))}
       ${summaryAlpha("Sati po radniku",group(rows,"person_name"))}
@@ -621,21 +602,6 @@ function adminDashboardSummary(rows){
 
 
 
-
-
-function monthStart(){
-  return `${state.month}-01`;
-}
-function monthEndExclusive(){
-  const [y,m]=state.month.split("-").map(Number);
-  const next=new Date(Date.UTC(y,m,1));
-  return `${next.getUTCFullYear()}-${String(next.getUTCMonth()+1).padStart(2,"0")}-01`;
-}
-function monthEndInclusive(){
-  const [y,m]=state.month.split("-").map(Number);
-  const last=new Date(Date.UTC(y,m,0));
-  return `${last.getUTCFullYear()}-${String(last.getUTCMonth()+1).padStart(2,"0")}-${String(last.getUTCDate()).padStart(2,"0")}`;
-}
 
 function normalizeDateValue(v){
   if(!v)return "";
@@ -670,7 +636,7 @@ function normalizeEntryRows(rows){
     let hrs = Number(r.hours);
     if(!Number.isFinite(hrs)) hrs = Number(h(start,end,br));
     if(!Number.isFinite(hrs)) hrs = 0;
-    const workDate = normalizeDateValue(r.work_date || r.date || "");
+    const workDate = normalizeDateValue(r.work_date || r.date || r.created_at || "");
     return {
       ...r,
       hours: hrs,
@@ -852,4 +818,3 @@ if (window.caches) {
 </body>
 </html>
 <!-- ADMIN_DEEP_RENORMALIZE_DONE -->
-<!-- FULL_MONTH_FALLBACK_CALLED -->
