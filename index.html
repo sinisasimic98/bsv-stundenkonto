@@ -1,3 +1,4 @@
+<!-- ADMIN_WORKER_HOURS_FIX -->
 <!-- PROJECT_REQUIRED_AGAIN_FINAL -->
 <!-- ADMIN_DASHBOARD_NAMES_NAN_FIX -->
 <!-- EDIT_PROJECTS_ADMIN -->
@@ -142,7 +143,17 @@ function isAdmin(){return state.profile?.role==="admin";}
 function workers(){return state.profiles.filter(p=>p.active!==false&&p.role==="worker");}
 function activeProjects(){return state.projects.filter(p=>p.active!==false);}
 function group(rows,key){const m={};rows.forEach(r=>m[r[key]||"Nepoznato"]=(m[r[key]||"Nepoznato"]||0)+Number(r.hours||0));return Object.entries(m).map(([name,hours])=>({name,hours:Math.round(hours*100)/100})).sort((a,b)=>b.hours-a.hours);}
-function filtered(){const q=state.search.toLowerCase();return state.entries.filter(e=>state.workerFilter==="all"||e.user_id===state.workerFilter).filter(e=>state.projectFilter==="all"||e.project_id===state.projectFilter).filter(e=>!q||(e.person_name||"").toLowerCase().includes(q)||(e.project_name||"").toLowerCase().includes(q)||(e.note||"").toLowerCase().includes(q));}
+
+function filtered(){
+  const q=(state.search||"").toLowerCase();
+  return normalizeEntryRows(state.entries).filter(e=>{
+    if(!String(e.work_date||"").startsWith(state.month))return false;
+    if(isAdmin() && state.workerFilter!=="all" && String(e.user_id)!==String(state.workerFilter))return false;
+    if(state.projectFilter!=="all" && String(e.project_id)!==String(state.projectFilter))return false;
+    if(q && !(`${e.person_name||""} ${e.project_name||""} ${e.customer||""}`).toLowerCase().includes(q))return false;
+    return true;
+  });
+}
 
 function buildReports(rows){
   const sorted=[...rows].sort((a,b)=>
@@ -586,6 +597,32 @@ function adminDashboardSummary(rows){
 }
 
 
+
+function normalizeEntryRows(rows){
+  return (rows||[]).map(r=>{
+    const personObj = r.profiles || r.profile || r.person || r.user || {};
+    const projectObj = r.projects || r.project || {};
+    const start = r.start_time || r.start || "";
+    const end = r.end_time || r.end || "";
+    const br = r.break_minutes ?? r.break ?? 0;
+    let hrs = Number(r.hours);
+    if(!Number.isFinite(hrs)){
+      hrs = Number(h(start,end,br));
+    }
+    if(!Number.isFinite(hrs)) hrs = 0;
+    return {
+      ...r,
+      hours: hrs,
+      user_id: r.user_id || r.profile_id || r.worker_id || personObj.id || "",
+      project_id: r.project_id || projectObj.id || "",
+      person_name: r.person_name || r.full_name || personObj.full_name || personObj.name || r.email || personObj.email || "-",
+      project_name: r.project_name || projectObj.name || r.project_name || r.project || "-",
+      customer: r.customer || projectObj.customer || "",
+      work_date: r.work_date || r.date || ""
+    };
+  });
+}
+
 function makeDashboardGroup(rows,key){
   const out={};
   (rows||[]).forEach(r=>{
@@ -605,6 +642,7 @@ function summaryAlphaFixed(title,obj){
   }).join("")}</div>`;
 }
 function adminDashboardSummaryFixed(rows){
+  rows=normalizeEntryRows(rows);
   return `<section class="panel">
     <div class="head">
       <h2>Pregled za mjesec</h2>
@@ -617,10 +655,11 @@ function adminDashboardSummaryFixed(rows){
 }
 
 function cleanDashboardCalendar(rows){
+  rows=normalizeEntryRows(rows);
   const visibleRows = isAdmin()
     ? rows
-        .filter(e=>state.workerFilter==="all" || e.user_id===state.workerFilter)
-        .filter(e=>state.projectFilter==="all" || e.project_id===state.projectFilter)
+        .filter(e=>state.workerFilter==="all" || String(e.user_id)===String(state.workerFilter))
+        .filter(e=>state.projectFilter==="all" || String(e.project_id)===String(state.projectFilter))
     : rows;
 
   const [year,monthNum]=state.month.split("-").map(Number);
@@ -681,7 +720,7 @@ function cleanDashboardCalendar(rows){
 }
 
 function entryForm(){const w=workers(),p=activeProjects(),e=state.entry;return `<div class="form"><label>Datum<input id="e_date" type="date" value="${e.work_date}"></label>${isAdmin()?`<label>Radnik<select id="e_user">${w.map(x=>`<option value="${x.id}" ${e.user_id===x.id?"selected":""}>${esc(x.full_name)}</option>`).join("")}</select></label>`:`<div class="info">Radnik: <b>${esc(state.profile?.full_name)}</b></div>`}<label>Projekat<select id="e_project"><option value="" selected>Obavezno izabrati projekat</option>${p.map(x=>`<option value="${x.id}">${esc(x.name)}${x.customer ? " · " + esc(x.customer) : ""}</option>`).join("")}</select></label><div class="grid three"><label>Od<input id="e_start" type="time" value="${e.start_time}"></label><label>Do<input id="e_end" type="time" value="${e.end_time}"></label><label>Pauza min<input id="e_break" type="text" inputmode="numeric" pattern="[0-9]*" value="${e.break_minutes}"></label></div><div class="info">Obračun: <b>${h(e.start_time,e.end_time,e.break_minutes)} h</b></div><button class="primary" id="addEntry">Sačuvaj sate</button></div>`;}
-function entriesTable(rows){if(!rows.length)return `<div class="empty">Nema unosa.</div>`;return `<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Radnik</th><th>Projekat</th><th>Klijent/Lokacija</th><th>Vrijeme</th><th>Pauza</th><th>Sati</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${e.work_date}</td><td>${esc(e.person_name)}</td><td>${esc(e.project_name)}</td><td>${esc(e.customer||"-")} · ${esc(e.location||"-")}</td><td>${e.start_time} - ${e.end_time}</td><td>${e.break_minutes} min</td><td><b>${e.hours} h</b></td><td><button data-del="${e.id}">Obriši</button></td></tr>`).join("")}</tbody></table></div>`;}
+function entriesTable(rows){rows=normalizeEntryRows(rows);if(!rows.length)return `<div class="empty">Nema unosa.</div>`;return `<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Radnik</th><th>Projekat</th><th>Klijent/Lokacija</th><th>Vrijeme</th><th>Pauza</th><th>Sati</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${e.work_date}</td><td>${esc(e.person_name)}</td><td>${esc(e.project_name)}</td><td>${esc(e.customer||"-")} · ${esc(e.location||"-")}</td><td>${e.start_time} - ${e.end_time}</td><td>${e.break_minutes} min</td><td><b>${e.hours} h</b></td><td><button data-del="${e.id}">Obriši</button></td></tr>`).join("")}</tbody></table></div>`;}
 function mainView(){const rows=filtered(),monthTotal=Math.round(rows.reduce((s,e)=>s+Number(e.hours||0),0)*100)/100,daily=state.entries.filter(e=>e.work_date===state.entry.work_date);app.innerHTML=`<main class="app"><header class="top"><div><p class="muted">Prijavljen: <b>${esc(state.profile?.full_name||state.session.user.email)}</b> · ${isAdmin()?"Admin":"Radnik"}</p><h1>${CONFIG.companyName} ${CONFIG.appName}</h1></div><nav>${["dashboard","daily","monthly"].map(k=>`<button data-tab="${k}" class="${state.tab===k?"active":""}">${k==="dashboard"?"Dashboard":k==="daily"?"Unos sati":"Mjesečno"}</button>`).join("")}${isAdmin()?`<button data-tab="projects" class="${state.tab==="projects"?"active":""}">Projekti</button><button data-tab="people" class="${state.tab==="people"?"active":""}">Radnici</button><button data-tab="stundenkonto" class="${state.tab==="stundenkonto"?"active":""}">Stundenkonto</button>`:""}<button id="refresh">Osvježi</button><button id="logout">Odjava</button></nav></header>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}<section class="stats">${stat(isAdmin()?"Radnika":"Moj profil",isAdmin()?workers().length:state.profile?.full_name)}${stat("Projekata",activeProjects().length)}${stat("Sati u mjesecu",monthTotal+" h")}${stat("Unosa",rows.length)}</section>${safeContent(rows,daily)}</main>`;document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>set({tab:b.dataset.tab}));bind("refresh","click",refresh);bind("logout","click",signOut);bindDynamic();}
 
 function safeContent(rows,daily){
