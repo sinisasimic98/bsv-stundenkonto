@@ -1,3 +1,4 @@
+<!-- ADMIN_PAGED_MONTH_COMPLETE_FIX -->
 <!-- FULL_MONTH_ADMIN_1_2_3_FIX -->
 <!-- ADMIN_HOURS_DEEP_FIX_MLADEN_NIKOLA -->
 <!-- ADMIN_WORKER_HOURS_FIX -->
@@ -147,19 +148,38 @@ function activeProjects(){return state.projects.filter(p=>p.active!==false);}
 function group(rows,key){const m={};rows.forEach(r=>m[r[key]||"Nepoznato"]=(m[r[key]||"Nepoznato"]||0)+Number(r.hours||0));return Object.entries(m).map(([name,hours])=>({name,hours:Math.round(hours*100)/100})).sort((a,b)=>b.hours-a.hours);}
 
 
-async function loadFullMonthEntriesFallback(){
-  if(!state.session)return;
-  try{
+async function loadFullMonthEntriesFallback(){await reloadEntriesForCurrentMonth();}
+
+
+async function loadAllMonthEntriesPaged(){
+  if(!state.session)return [];
+  const pageSize=1000;
+  let from=0;
+  let all=[];
+  while(true){
+    const to=from+pageSize-1;
     const {data,error}=await supabase.from("entries")
       .select("*,profiles(id,full_name,email),projects(id,name,customer)")
       .gte("work_date",monthStart())
       .lt("work_date",monthEndExclusive())
-      .order("work_date",{ascending:true});
-    if(!error && data){
-      state.entries=normalizeEntryRows(data);
+      .order("work_date",{ascending:true})
+      .range(from,to);
+    if(error){
+      console.error("entries paged load error",error);
+      break;
     }
-  }catch(err){
-    console.warn("full month fallback failed",err);
+    const batch=data||[];
+    all=all.concat(batch);
+    if(batch.length<pageSize)break;
+    from+=pageSize;
+    if(from>20000)break;
+  }
+  return normalizeEntryRows(all);
+}
+async function reloadEntriesForCurrentMonth(){
+  const loaded=await loadAllMonthEntriesPaged();
+  if(loaded && loaded.length>=0){
+    state.entries=loaded;
   }
 }
 
@@ -355,8 +375,10 @@ async function exportExcel(rows){
 }
 
 async function refresh(){
+  if(state.__loadingPagedMonth)return;
+
   if(!state.session?.user){set({loading:false});return;}
-  state.loading=true;render();
+  state.loading=true;await reloadEntriesForCurrentMonth();render();
   const me=await supabase.from("profiles").select("*").eq("id",state.session.user.id).single();
   if(me.error){set({message:"Profil nije pronađen. Pokreni no_approval_excel_fix.sql u Supabase.",loading:false});return;}
   state.profile=me.data;
@@ -757,7 +779,7 @@ function cleanDashboardCalendar(rows){
   return `<section class="cleanDash">
     <div class="cleanDashHead">
       <h2>${monthNames[monthNum-1]} ${year}</h2>
-      <b>${total} h</b>
+      <b>${total} h</b>${isAdmin()?`<small class="muted">Ukupno unosa: ${visibleRows.length}</small>`:""}
     </div>
     ${isAdmin() ? `<div class="cleanDashFilters">
       <input id="month" type="month" value="${state.month}">
@@ -770,6 +792,7 @@ function cleanDashboardCalendar(rows){
         ${activeProjects().map(p=>`<option value="${p.id}" ${state.projectFilter===p.id?"selected":""}>${esc(p.name)}${p.customer ? " · " + esc(p.customer) : ""}</option>`).join("")}
       </select>
     </div>` : `<div class="cleanDashFilters" style="grid-template-columns:1fr"><input id="month" type="month" value="${state.month}"></div>`}
+    ${isAdmin()?`<p class="muted">Provjera 1-3: 01=${visibleRows.filter(e=>e.work_date===state.month+"-01").length}, 02=${visibleRows.filter(e=>e.work_date===state.month+"-02").length}, 03=${visibleRows.filter(e=>e.work_date===state.month+"-03").length}</p>`:""}
     <div class="cleanWeek">${["Pon","Uto","Sri","Čet","Pet","Sub","Ned"].map(d=>`<div>${d}</div>`).join("")}</div>
     <div class="cleanGrid">${cells}</div>
   </section>`;
@@ -804,7 +827,13 @@ function content(rows,daily){
   return "";
 }
 
-function bindDynamic(){document.querySelectorAll("[data-clean-day]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.cleanDay;state.month=el.dataset.cleanDay.slice(0,7);state.tab="daily";refresh();});const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=()=>{state.month=monthEl.value;refresh();};document.querySelectorAll("[data-day-open]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.dayOpen;state.month=el.dataset.dayOpen.slice(0,7);state.tab="daily";refresh();});const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});/* entry fields are read only on save - no live refresh */[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-save-project]").forEach(b=>b.onclick=()=>updateProject(b.dataset.saveProject));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>archiveProject(b.dataset.archiveProject));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));
+
+async function monthOrFilterChanged(){
+  await reloadEntriesForCurrentMonth();
+  render();
+}
+
+function bindDynamic(){document.querySelectorAll("[data-clean-day]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.cleanDay;state.month=el.dataset.cleanDay.slice(0,7);state.tab="daily";refresh();});const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=async()=>{state.month=monthEl.value;await monthOrFilterChanged();};document.querySelectorAll("[data-day-open]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.dayOpen;state.month=el.dataset.dayOpen.slice(0,7);state.tab="daily";refresh();});const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});/* entry fields are read only on save - no live refresh */[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-save-project]").forEach(b=>b.onclick=()=>updateProject(b.dataset.saveProject));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>archiveProject(b.dataset.archiveProject));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));
 document.querySelectorAll("[data-paid],[data-carry]").forEach(el=>{
   el.oninput=()=>readStundenkontoInputs();
   el.onchange=()=>readStundenkontoInputs();
@@ -852,3 +881,4 @@ if (window.caches) {
 </html>
 <!-- ADMIN_DEEP_RENORMALIZE_DONE -->
 <!-- FULL_MONTH_FALLBACK_CALLED -->
+<!-- PAGED_MONTH_REFRESH_INJECTED -->
