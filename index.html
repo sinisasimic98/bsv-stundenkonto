@@ -1,3 +1,4 @@
+<!-- RESET_EMAIL_TO_TYPED_USER_FINAL -->
 <!-- PROJECT_REQUIRED_WITH_LIMIT_2500 -->
 <!-- PROJECT_REQUIRED_AGAIN_FINAL -->
 <!-- ADMIN_DASHBOARD_NAMES_NAN_FIX -->
@@ -354,7 +355,30 @@ async function signUp(){
   const {error}=await supabase.auth.signUp({email:state.authEmail,password:state.authPassword,options:{data:{full_name:state.authName||state.authEmail},emailRedirectTo:cleanUrl}});
   if(error)set({message:error.message});else set({message:"Registracija je poslana. Provjeri email i klikni potvrdu prije prijave.",authMode:"login",authPassword:"",authPassword2:""});
 }
-async function sendResetEmail(){if(!state.authEmail){set({message:"Unesi email za reset lozinke."});return;}const cleanUrl=window.location.href.split("#")[0].split("?")[0];const {error}=await supabase.auth.resetPasswordForEmail(state.authEmail,{redirectTo:cleanUrl});if(error)set({message:error.message});else set({message:"Poslali smo email za promjenu lozinke. Otvori email i klikni link."});}
+
+async function sendResetEmail(){
+  const emailEl=document.getElementById("authEmail");
+  const email=(emailEl?.value || state.authEmail || "").trim().toLowerCase();
+
+  if(!email){
+    set({message:"Unesi svoju e-mail adresu za promjenu lozinke."});
+    return;
+  }
+
+  state.authEmail=email;
+
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{
+    redirectTo:"https://stundenkonto-bsv.de"
+  });
+
+  if(error){
+    set({message:error.message});
+    return;
+  }
+
+  set({message:`Link za promjenu lozinke je poslan na: ${email}`});
+}
+
 async function updatePassword(){if(!state.resetPassword1||!state.resetPassword2){set({message:"Unesi novu lozinku dva puta."});return;}if(state.resetPassword1!==state.resetPassword2){set({message:"Nove lozinke nisu iste."});return;}if(state.resetPassword1.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}const {error}=await supabase.auth.updateUser({password:state.resetPassword1});if(error)set({message:error.message});else set({message:"Lozinka je promijenjena. Možeš se prijaviti.",authMode:"login",resetPassword1:"",resetPassword2:""});}
 async function signOut(){await supabase.auth.signOut();set({session:null,profile:null,tab:"daily"});}
 
