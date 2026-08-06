@@ -1,3 +1,4 @@
+<!-- RESET_OWN_EMAIL_FINAL_15MIN -->
 <!-- RESET_EMAIL_TO_TYPED_USER_FINAL -->
 <!-- PROJECT_REQUIRED_WITH_LIMIT_2500 -->
 <!-- PROJECT_REQUIRED_AGAIN_FINAL -->
@@ -357,26 +358,12 @@ async function signUp(){
 }
 
 async function sendResetEmail(){
-  const emailEl=document.getElementById("authEmail");
-  const email=(emailEl?.value || state.authEmail || "").trim().toLowerCase();
-
-  if(!email){
-    set({message:"Unesi svoju e-mail adresu za promjenu lozinke."});
-    return;
-  }
-
-  state.authEmail=email;
-
-  const {error}=await supabase.auth.resetPasswordForEmail(email,{
-    redirectTo:"https://stundenkonto-bsv.de"
-  });
-
-  if(error){
-    set({message:error.message});
-    return;
-  }
-
-  set({message:`Link za promjenu lozinke je poslan na: ${email}`});
+  const email=String(document.getElementById("resetEmail")?.value || state.resetEmail || "").trim().toLowerCase();
+  if(!email){set({message:"Unesite e-mail adresu radnika."});return;}
+  state.resetEmail=email;
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:"https://stundenkonto-bsv.de"});
+  if(error){set({message:error.message});return;}
+  set({message:`Link za promjenu lozinke poslan je na: ${email}`,resetEmail:""});
 }
 
 async function updatePassword(){if(!state.resetPassword1||!state.resetPassword2){set({message:"Unesi novu lozinku dva puta."});return;}if(state.resetPassword1!==state.resetPassword2){set({message:"Nove lozinke nisu iste."});return;}if(state.resetPassword1.length<6){set({message:"Lozinka mora imati najmanje 6 znakova."});return;}const {error}=await supabase.auth.updateUser({password:state.resetPassword1});if(error)set({message:error.message});else set({message:"Lozinka je promijenjena. Možeš se prijaviti.",authMode:"login",resetPassword1:"",resetPassword2:""});}
@@ -544,19 +531,12 @@ function stundenkontoView(){
 }
 
 function loginView(){
- const isReset=state.authMode==="reset";
- app.innerHTML=`<main class="login"><section class="card">
- <div class="logo">BSV</div><h1>${CONFIG.companyName} ${CONFIG.appName}</h1><p class="muted">Online evidencija sati za radnike i projekte.</p>
- <div class="switch"><button id="modeLogin" class="${state.authMode==="login"?"active":""}">Prijava</button><button id="modeSignup" class="${state.authMode==="signup"?"active":""}">Novi korisnik</button></div>
- ${isReset?`<div class="info">Unesi novu lozinku dva puta. Ovo radi nakon što klikneš link iz emaila za reset lozinke.</div><input id="resetPassword1" placeholder="Nova lozinka" type="password" value="${esc(state.resetPassword1)}"><input id="resetPassword2" placeholder="Ponovi novu lozinku" type="password" value="${esc(state.resetPassword2)}">`:`${state.authMode==="signup"?`<input id="authName" placeholder="Ime i prezime" value="${esc(state.authName)}">`:""}<input id="authEmail" placeholder="Email" value="${esc(state.authEmail)}"><input id="authPassword" placeholder="Lozinka" type="password" value="${esc(state.authPassword)}">${state.authMode==="signup"?`<input id="authPassword2" placeholder="Ponovi lozinku" type="password" value="${esc(state.authPassword2)}">`:""}`}
- ${state.message?`<div class="msg">${esc(state.message)}</div>`:""}
- ${isReset?`<button class="primary" id="updatePassword">Promijeni lozinku</button>`:`<button class="primary" id="authBtn">${state.authMode==="login"?"Prijavi se":"Kreiraj korisnika"}</button>`}
- ${state.authMode==="login"?`<button class="linkbtn" id="forgotBtn">Zaboravljena lozinka?</button>`:""}
- </section></main>`;
- bind("modeLogin","click",()=>set({authMode:"login",message:""}));bind("modeSignup","click",()=>set({authMode:"signup",message:""}));
- if(isReset){bindInput("resetPassword1","resetPassword1");bindInput("resetPassword2","resetPassword2");bind("updatePassword","click",updatePassword);}
- else{bindInput("authEmail","authEmail");bindInput("authPassword","authPassword");if(state.authMode==="signup"){bindInput("authName","authName");bindInput("authPassword2","authPassword2");}bind("authBtn","click",()=>state.authMode==="login"?signIn():signUp());bind("forgotBtn","click",sendResetEmail);}
+  if(state.authMode==="reset")return `<main class="login"><section class="card"><h1>Nova lozinka</h1><input id="resetPassword1" type="password" placeholder="Nova lozinka" value="${esc(state.resetPassword1||"")}"><input id="resetPassword2" type="password" placeholder="Ponovi novu lozinku" value="${esc(state.resetPassword2||"")}"><button class="primary" id="updatePasswordBtn">Promijeni lozinku</button>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}</section></main>`;
+  if(state.authMode==="forgot")return `<main class="login"><section class="card"><h1>Zaboravljena lozinka</h1><p class="muted">Unesite svoj e-mail. Reset link ide samo na tu adresu.</p><input id="resetEmail" type="email" autocomplete="email" placeholder="E-mail radnika" value="${esc(state.resetEmail||"")}"><button class="primary" id="sendResetBtn">Pošalji reset link</button><button id="backLoginBtn">Nazad na prijavu</button>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}</section></main>`;
+  if(state.authMode==="register")return `<main class="login"><section class="card"><h1>Novi korisnik</h1><input id="authName" placeholder="Ime i prezime" value="${esc(state.authName||"")}"><input id="authEmail" type="email" placeholder="E-mail" value="${esc(state.authEmail||"")}"><input id="authPassword" type="password" placeholder="Lozinka" value="${esc(state.authPassword||"")}"><input id="authPassword2" type="password" placeholder="Ponovi lozinku" value="${esc(state.authPassword2||"")}"><button class="primary" id="signUpBtn">Registruj se</button><button id="backLoginBtn">Nazad na prijavu</button>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}</section></main>`;
+  return `<main class="login"><section class="card"><h1>BSV Montage Stundenkonto</h1><input id="authEmail" type="email" autocomplete="email" placeholder="E-mail" value="${esc(state.authEmail||"")}"><input id="authPassword" type="password" placeholder="Lozinka" value="${esc(state.authPassword||"")}"><button class="primary" id="signInBtn">Prijava</button><button id="forgotBtn">Zaboravljena lozinka</button><button id="registerBtn">Novi korisnik</button>${state.message?`<div class="msg">${esc(state.message)}</div>`:""}</section></main>`;
 }
+
 function stat(t,v){return `<div class="stat"><span>${esc(t)}</span><b>${esc(v)}</b></div>`;}
 function summary(title,rows){return `<div class="summary"><h3>${esc(title)}</h3>${rows.length?rows.map(r=>`<div class="sumrow"><span>${esc(r.name)}</span><b>${r.hours} h</b></div>`).join(""):`<p class="muted">Nema unosa.</p>`}</div>`;}
 
