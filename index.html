@@ -333,12 +333,14 @@ async function exportExcel(rows){
   }
 }
 
+let refreshSequence=0, stkSaveQueue=Promise.resolve(), stkPending=0, stkEditError="";
 async function refresh(successMessage=""){
+  const request=++refreshSequence, month=state.month;
   if(!state.session?.user){set({loading:false});return;}
   state.loading=true;render();
   const sessionUserId=state.session.user.id;
   const me=await supabase.from("profiles").select("*").eq("id",sessionUserId).maybeSingle();
-  if(state.session?.user.id!==sessionUserId)return;
+  if(request!==refreshSequence||state.session?.user.id!==sessionUserId)return;
   if(me.error||!me.data||me.data.active===false){
     if(me.error){set({profile:null,message:me.error.message,loading:false});return;}
     await supabase.auth.signOut({scope:"local"});
@@ -348,13 +350,18 @@ async function refresh(successMessage=""){
     return;
   }
   state.profile=me.data;
-  const [pr,pj,en]=await Promise.all([
+  await stkSaveQueue;
+  if(request!==refreshSequence||state.session?.user.id!==sessionUserId)return;
+  const [pr,pj,en,balances]=await Promise.all([
     supabase.from("profiles").select("*").order("full_name"),
     supabase.from("projects").select("*").order("name"),
-    supabase.from("time_entries_view").select("*").gte("work_date",`${state.month}-01`).lt("work_date",nextMonthStart(state.month)).order("work_date",{ascending:false}).limit(2500)
+    supabase.from("time_entries_view").select("*").gte("work_date",`${month}-01`).lt("work_date",nextMonthStart(month)).order("work_date",{ascending:false}).limit(2500),
+    isAdmin()?supabase.rpc("stundenkonto_month",{p_month:month+"-01"}):{data:[]}
   ]);
-  if(state.session?.user.id!==sessionUserId)return;
-  state.profiles=pr.data||[];state.projects=pj.data||[];state.entries=en.data||[];if(isAdmin()) await loadStundenkontoBalances();
+  if(request!==refreshSequence||state.session?.user.id!==sessionUserId)return;
+  state.profiles=pr.data||[];state.projects=pj.data||[];state.entries=en.data||[];
+  state.stkBalances=Object.fromEntries((balances.data||[]).map(row=>[row.user_id,row]));
+  state.stkLoadError=balances.error?.message||"";
   const w=workers(),p=activeProjects();
   if(isAdmin()){
     if(!state.entry.user_id || !w.find(x=>x.id===state.entry.user_id)) state.entry.user_id=w[0]?.id||"";
@@ -456,99 +463,92 @@ function nextMonth(month){
   const [y,m]=month.split("-").map(Number);
   return new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
 }
-function monthTotalsFromEntries(){
-  const totals={};
-  state.entries.forEach(e=>{
-    totals[e.user_id]=(totals[e.user_id]||0)+Number(e.hours||0);
-  });
-  return totals;
-}
 function stundenkontoRows(){
-  const totals=monthTotalsFromEntries();
-  const balances=state.stkBalances||{};
-  return reportWorkers().filter(p=>p.active!==false||Object.hasOwn(totals,p.id)||Object.hasOwn(balances,p.id)).map(p=>{
-    const bal=balances[p.id]||{};
-    const prev=Number(bal.carried_hours||0);
-    const monthHours=Math.round((totals[p.id]||0)*100)/100;
-    const paid=Number(bal.paid_hours||0);
-    const carry=Math.round((prev+monthHours-paid)*100)/100;
-    return {id:p.id,name:p.full_name||p.email||"Radnik",prev,monthHours,paid,carry,archived:p.active===false};
+  return reportWorkers().flatMap(p=>{
+    const b=state.stkBalances[p.id];
+    if(!b)return [];
+    const prev=Number(b.carried_hours),monthHours=Number(b.worked_hours);
+    const paid=Number(b.paid_hours),carry=Number(b.next_carry_hours);
+    if(p.active===false&&!prev&&!monthHours&&!paid&&!carry)return [];
+    return [{id:p.id,name:p.full_name||p.email||"Radnik",prev,monthHours,paid,carry,archived:p.active===false}];
   });
 }
-async function loadStundenkontoBalances(){
-  if(!isAdmin()) return;
-  const {data,error}=await supabase.from("stundenkonto_balances").select("*").eq("month",state.month);
-  if(error){
-    state.stkBalances={};
-    state.message="Pokreni SQL fajl stundenkonto_balances.sql u Supabase za Stundenkonto.";
+
+function stundenkontoTotals(rows){
+  return Object.fromEntries(["prev","monthHours","paid","carry"].map(key=>[
+    key,Math.round(rows.reduce((sum,row)=>sum+row[key],0)*100)/100
+  ]));
+}
+
+function updateStundenkontoDisplay(){
+  const rows=stundenkontoRows();
+  const totals=stundenkontoTotals(rows);
+  document.querySelectorAll("[data-stk-total]").forEach(el=>{
+    el.textContent=totals[el.dataset.stkTotal]+" h";
+  });
+  const byId=new Map(rows.map(row=>[row.id,row]));
+  document.querySelectorAll("[data-stk-next]").forEach(el=>{
+    const row=byId.get(el.dataset.stkNext);
+    if(!row)return;
+    el.textContent=row.carry+" h";
+    el.className=row.carry<0?"stkNegative":"stkPositive";
+  });
+}
+
+function showStundenkontoStatus(){
+  const status=document.getElementById("stkStatus");
+  if(status)status.textContent=stkEditError||(stkPending?"Čuvanje…":"Izmjene se čuvaju automatski.");
+}
+
+function saveStundenkontoInput(input){
+  const field=input.dataset.carry?"carry":"paid";
+  const id=input.dataset.carry||input.dataset.paid;
+  const raw=input.value.trim().replace(",",".");
+  const value=raw===""?0:Number(raw);
+  const expected=Number(input.dataset.saved);
+  if((raw!==""&&!/^-?(?:[0-9]+(?:\.[0-9]{1,2})?|\.[0-9]{1,2})$/.test(raw))
+      ||Math.abs(value)>1000000||(field==="paid"&&value<0)){
+    stkEditError="Unesi ispravan broj sati s najviše dvije decimale.";
+    input.value=String(expected);
+    showStundenkontoStatus();
     return;
   }
-  const map={};
-  (data||[]).forEach(r=>{
-    map[r.user_id]={carried_hours:Number(r.carried_hours||0),paid_hours:Number(r.paid_hours||0)};
-  });
-  state.stkBalances=map;
-}
-function readStundenkontoInputs(){
-  const map={...(state.stkBalances||{})};
-  document.querySelectorAll("[data-carry]").forEach(el=>{
-    const uid=el.dataset.carry;
-    const raw=String(el.value||"").replace(",",".");
-    map[uid]={...(map[uid]||{}),carried_hours:Number(raw||0),paid_hours:Number(map[uid]?.paid_hours||0)};
-  });
-  document.querySelectorAll("[data-paid]").forEach(el=>{
-    const uid=el.dataset.paid;
-    const raw=String(el.value||"").replace(",",".");
-    map[uid]={...(map[uid]||{}),carried_hours:Number(map[uid]?.carried_hours||0),paid_hours:Number(raw||0)};
-  });
-  state.stkBalances=map;
-}
-async function saveAndTransferStundenkonto(){
-  readStundenkontoInputs();
-  const rows=stundenkontoRows();
-  const nm=nextMonth(state.month);
+  if(value===expected){input.value=String(expected);return;}
 
-  const currentRows=rows.map(r=>({
-    month:state.month,
-    user_id:r.id,
-    carried_hours:Number(state.stkBalances?.[r.id]?.carried_hours||0),
-    paid_hours:Number(state.stkBalances?.[r.id]?.paid_hours||0),
-    next_carry_hours:Number(r.carry||0)
-  }));
-
-  const nextRows=rows.filter(r=>!r.archived).map(r=>({
-    month:nm,
-    user_id:r.id,
-    carried_hours:Number(r.carry||0),
-    paid_hours:0,
-    next_carry_hours:0
-  }));
-
-  if(currentRows.length){
-    const {error:e1}=await supabase.from("stundenkonto_balances").upsert(currentRows,{onConflict:"month,user_id"});
-    if(e1) return {error:e1};
-    if(nextRows.length){
-      const {error}=await supabase.from("stundenkonto_balances").upsert(nextRows,{onConflict:"month,user_id"});
-      if(error)return {error};
+  const month=state.month, actor=state.session?.user.id;
+  input.disabled=true;
+  stkPending++;
+  stkEditError="";
+  showStundenkontoStatus();
+  stkSaveQueue=stkSaveQueue.then(async()=>{
+    try{
+      if(state.session?.user.id!==actor)throw new Error("Prijavi se ponovo i ponovi unos.");
+      const {data,error}=await supabase.rpc("stundenkonto_save_value",{
+        p_month:month+"-01",p_worker:id,p_field:field,p_value:value,p_expected:expected
+      }).single();
+      if(error)throw error;
+      input.dataset.saved=String(Number(field==="carry"?data.carried_hours:data.paid_hours));
+      input.value=input.dataset.saved;
+      if(state.month===month&&state.session?.user.id===actor){
+        state.stkBalances[id]=data;
+        updateStundenkontoDisplay();
+      }
+    }catch(error){
+      input.value=String(expected);
+      stkEditError="Unos nije sačuvan. "+(error?.message||"Ponovi unos.");
+    }finally{
+      input.disabled=false;
+      stkPending--;
+      showStundenkontoStatus();
     }
-    const archivedRows=rows.filter(r=>r.archived&&(r.carry!==0||r.prev!==0||r.monthHours!==0||r.paid!==0)).map(r=>({
-      month:nm,user_id:r.id,carried_hours:r.carry
-    }));
-    if(archivedRows.length){
-      const {error}=await supabase.from("stundenkonto_balances")
-        .upsert(archivedRows,{onConflict:"month,user_id",defaultToNull:false});
-      if(error)return {error};
-    }
-  }
-  return {error:null,nextMonth:nm};
+  });
 }
+
 function stundenkontoView(){
+  if(state.stkLoadError)return `<section class="stkPanel"><h2>Stundenkonto</h2><p class="msg">Obračun se ne može učitati. ${esc(state.stkLoadError)}</p></section>`;
   const rows=stundenkontoRows();
   const nm=nextMonth(state.month);
-  const totalPrev=Math.round(rows.reduce((s,r)=>s+r.prev,0)*100)/100;
-  const totalMonth=Math.round(rows.reduce((s,r)=>s+r.monthHours,0)*100)/100;
-  const totalPaid=Math.round(rows.reduce((s,r)=>s+r.paid,0)*100)/100;
-  const totalCarry=Math.round(rows.reduce((s,r)=>s+r.carry,0)*100)/100;
+  const {prev:totalPrev,monthHours:totalMonth,paid:totalPaid,carry:totalCarry}=stundenkontoTotals(rows);
 
   return `<section class="stkPanel">
     <div class="head">
@@ -556,28 +556,28 @@ function stundenkontoView(){
       <input id="month" type="month" value="${state.month}">
     </div>
     <div class="stkSummary">
-      <div class="stkBox"><span>Ukupno preneseno</span><b>${totalPrev} h</b></div>
-      <div class="stkBox"><span>Ukupno sati mjesec</span><b>${totalMonth} h</b></div>
-      <div class="stkBox"><span>Isplaćeno</span><b>${totalPaid} h</b></div>
-      <div class="stkBox"><span>Prenos u ${nm}</span><b>${totalCarry} h</b></div>
+      <div class="stkBox"><span>Ukupno preneseno</span><b data-stk-total="prev">${totalPrev} h</b></div>
+      <div class="stkBox"><span>Ukupno sati mjesec</span><b data-stk-total="monthHours">${totalMonth} h</b></div>
+      <div class="stkBox"><span>Isplaćeno</span><b data-stk-total="paid">${totalPaid} h</b></div>
+      <div class="stkBox"><span>Prenos u ${nm}</span><b data-stk-total="carry">${totalCarry} h</b></div>
     </div>
-    <button class="primary" id="saveTransfer">Sačuvaj i prenesi u sljedeći mjesec</button>
+    <p id="stkStatus" role="status">${esc(stkEditError||(stkPending?"Čuvanje…":"Izmjene se čuvaju automatski."))}</p>
     <div class="stkTableWrap">
       <table class="stkTable">
         <thead><tr><th>Radnik</th><th>Preneseni sati</th><th>Sati u mjesecu</th><th>Isplaćeni sati</th><th>Prenos za sledeći mjesec</th></tr></thead>
         <tbody>
           ${rows.map(r=>`<tr>
             <td><b>${esc(r.name)}</b>${r.archived?" · arhiviran":""}</td>
-            <td><input data-carry="${r.id}" type="text" inputmode="decimal" value="${r.prev}"></td>
+            <td><input data-carry="${r.id}" type="text" inputmode="decimal" value="${r.prev}" data-saved="${r.prev}"></td>
             <td>${r.monthHours} h</td>
-            <td><input data-paid="${r.id}" type="text" inputmode="decimal" value="${r.paid}"></td>
-            <td class="${r.carry<0?"stkNegative":"stkPositive"}">${r.carry} h</td>
+            <td><input data-paid="${r.id}" type="text" inputmode="decimal" value="${r.paid}" data-saved="${r.paid}"></td>
+            <td data-stk-next="${r.id}" class="${r.carry<0?"stkNegative":"stkPositive"}">${r.carry} h</td>
           </tr>`).join("")}
-          <tr><td><b>UKUPNO</b></td><td><b>${totalPrev} h</b></td><td><b>${totalMonth} h</b></td><td><b>${totalPaid} h</b></td><td><b>${totalCarry} h</b></td></tr>
+          <tr><td><b>UKUPNO</b></td><td><b data-stk-total="prev">${totalPrev} h</b></td><td><b data-stk-total="monthHours">${totalMonth} h</b></td><td><b data-stk-total="paid">${totalPaid} h</b></td><td><b data-stk-total="carry">${totalCarry} h</b></td></tr>
         </tbody>
       </table>
     </div>
-    <div class="info">Upiši isplaćene sate i klikni dugme. Prenos se trajno čuva u Supabase i pojaviće se u sljedećem mjesecu.</div>
+    <div class="info">Izmjena se čuva kad izađeš iz polja ili pritisneš Enter. Prenos se računa automatski.</div>
   </section>`;
 }
 
@@ -778,23 +778,12 @@ function content(rows,daily){
 function bindDynamic(){document.querySelectorAll("[data-clean-day]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.cleanDay;state.month=el.dataset.cleanDay.slice(0,7);state.tab="daily";refresh();});const monthEl=document.getElementById("month");if(monthEl)monthEl.onchange=()=>{state.month=monthEl.value;refresh();};document.querySelectorAll("[data-day-open]").forEach(el=>el.onclick=()=>{state.entry.work_date=el.dataset.dayOpen;state.month=el.dataset.dayOpen.slice(0,7);state.tab="daily";refresh();});const wf=document.getElementById("workerFilter");if(wf)wf.onchange=()=>set({workerFilter:wf.value});const pf=document.getElementById("projectFilter");if(pf)pf.onchange=()=>set({projectFilter:pf.value});const se=document.getElementById("search");if(se)se.oninput=()=>set({search:se.value});/* entry fields are read only on save - no live refresh */[["p_name","name"],["p_customer","customer"],["p_location","location"]].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.oninput=()=>state.project[k]=el.value;});bind("addEntry","click",addEntry);bind("addProject","click",addProject);bind("excel","click",()=>exportExcel(filtered()));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delEntry(b.dataset.del));document.querySelectorAll("[data-save-project]").forEach(b=>b.onclick=()=>updateProject(b.dataset.saveProject));document.querySelectorAll("[data-archive-project]").forEach(b=>b.onclick=()=>setProjectActive(b.dataset.archiveProject,false,b));document.querySelectorAll("[data-reactivate-project]").forEach(b=>b.onclick=()=>setProjectActive(b.dataset.reactivateProject,true,b));document.querySelectorAll("[data-p-name]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pName);if(p)p.full_name=el.value;});document.querySelectorAll("[data-p-position]").forEach(el=>el.oninput=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pPosition);if(p)p.position=el.value;});document.querySelectorAll("[data-p-role]").forEach(el=>el.onchange=()=>{const p=state.profiles.find(x=>x.id===el.dataset.pRole);if(p)p.role=el.value;});document.querySelectorAll("[data-save-profile]").forEach(b=>b.onclick=()=>saveProfile(b.dataset.saveProfile));
 document.querySelectorAll("[data-archive-worker]").forEach(b=>b.onclick=()=>setWorkerActive(b.dataset.archiveWorker,false,b));
 document.querySelectorAll("[data-reactivate-worker]").forEach(b=>b.onclick=()=>setWorkerActive(b.dataset.reactivateWorker,true,b));
-document.querySelectorAll("[data-paid],[data-carry]").forEach(el=>{
-  el.oninput=()=>readStundenkontoInputs();
-  el.onchange=()=>readStundenkontoInputs();
-});
-const saveTransferBtn=document.getElementById("saveTransfer");
-if(saveTransferBtn){
-  saveTransferBtn.onclick=async()=>{
-    const result=await saveAndTransferStundenkonto();
-    if(result.error){
-      set({message:result.error.message});
-    }else{
-      set({message:`Prenos je sačuvan za ${result.nextMonth}.`});
-      refresh();
-    }
+document.querySelectorAll("[data-paid],[data-carry]").forEach(input=>{
+  input.onchange=()=>saveStundenkontoInput(input);
+  input.onkeydown=event=>{
+    if(event.key==="Enter"){event.preventDefault();input.blur();}
   };
-}
-
+});
 }
 function bind(id,event,fn){const el=document.getElementById(id);if(el)el.addEventListener(event,fn);}
 function bindInput(id,key){const el=document.getElementById(id);if(el)el.oninput=()=>state[key]=el.value;}
